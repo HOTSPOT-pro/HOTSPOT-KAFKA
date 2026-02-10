@@ -1,0 +1,33 @@
+name: "🧪 Test"
+description: "테스트 코드 작성 / 개선"
+labels: ["test"]
+body:
+  - type: input
+    id: jira_key
+    attributes:
+      label: 🎫 Jira 티켓 번호
+      description: 예) HOTSPOT-123 (브랜치/PR 추적에 사용됩니다)
+      placeholder: HOTSPOT-123
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: 📄 설명
+      description: 어떤 테스트를 추가/개선할지 설명해주세요
+      placeholder: 자세히 적을수록 좋습니다!
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: ✅ 작업할 테스트
+      description: 할 일을 체크박스 형태로 작성해주세요.
+      placeholder: 최대한 세분화 해서 적어주세요!
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: 🧩 참고 사항
+      description: mock 처리, 테스트 전략 등 기술적인 설명이 있다면 작성해주세요

@@ -1,0 +1,33 @@
+name: "🛠 Refactor"
+description: "코드 / 구조 리팩토링"
+labels: ["refactor"]
+body:
+  - type: input
+    id: jira_key
+    attributes:
+      label: 🎫 Jira 티켓 번호
+      description: 예) HOTSPOT-123 (브랜치/PR 추적에 사용됩니다)
+      placeholder: HOTSPOT-123
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: 📄 설명
+      description: 리팩토링이 필요한 이유를 설명해주세요.
+      placeholder: 자세히 적을수록 좋습니다!
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: ✅ 리팩토링 항목
+      description: 할 일을 체크박스 형태로 작성해주세요.
+      placeholder: 최대한 세분화 해서 적어주세요!
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: 🙋🏻 고려 사항
+      description: 리팩토링 시 주의해야 할 점이 있다면 작성해주세요

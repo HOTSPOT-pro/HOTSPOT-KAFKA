@@ -1,0 +1,26 @@
+name: "🚑 Hotfix"
+description: "운영 장애 / 긴급 수정"
+labels: ["hotfix"]
+body:
+  - type: input
+    id: jira_key
+    attributes:
+      label: 🎫 Jira 티켓 번호
+      description: 반드시 Jira 이슈와 연결되어야 합니다.
+      placeholder: HOTSPOT-123
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: 🚨 발생한 문제
+      description: 어떤 문제가 발생했는지 명확히 작성해주세요.
+    validations:
+      required: true
+
+  - type: textarea
+    attributes:
+      label: 🔥 긴급 사유
+      description: 왜 hotfix가 필요한지 작성해주세요.
+    validations:
+      required: true
