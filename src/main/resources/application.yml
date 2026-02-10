@@ -1,0 +1,39 @@
+project:
+  name: Hotspot Kafka API
+  version: 1.0.0
+
+server:
+  port: 8080
+
+spring:
+  application:
+    name: backend
+
+  profiles:
+    default: local
+
+  config:
+    import:
+      - classpath:postgres.yml
+      - classpath:redis.yml
+      - classpath:kafka.yml
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local
+
+logging:
+  level:
+    root: INFO
+
+---
+spring:
+  config:
+    activate:
+      on-profile: dev
+
+logging:
+  level:
+    root: INFO

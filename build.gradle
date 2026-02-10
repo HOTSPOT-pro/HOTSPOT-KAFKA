@@ -1,12 +1,16 @@
 plugins {
 	id 'java'
-	id 'org.springframework.boot' version '4.0.2'
+	id 'org.springframework.boot' version '3.3.5'
 	id 'io.spring.dependency-management' version '1.1.7'
+
+	// Code Quality
+	id 'checkstyle'
+	id 'com.diffplug.spotless' version '6.25.0'
 }
 
-group = 'java.hotspot'
+group = 'com.hotspot'
 version = '0.0.1-SNAPSHOT'
-description = 'Demo project for Spring Boot'
+description = 'Hotspot Usage Worker'
 
 java {
 	toolchain {
@@ -14,23 +18,25 @@ java {
 	}
 }
 
-configurations {
-	compileOnly {
-		extendsFrom annotationProcessor
-	}
-}
-
 repositories {
 	mavenCentral()
 }
 
+/* =========================
+   Dependencies
+========================= */
 dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 	implementation 'org.springframework.boot:spring-boot-starter-kafka'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
+
+	// DB (PostgreSQL)
+	runtimeOnly 'org.postgresql:postgresql'
+
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
+
 	testImplementation 'org.springframework.boot:spring-boot-starter-actuator-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-data-redis-test'
 	testImplementation 'org.springframework.boot:spring-boot-starter-kafka-test'
@@ -38,6 +44,55 @@ dependencies {
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 
+/* =========================
+   Test
+========================= */
 tasks.named('test') {
 	useJUnitPlatform()
 }
+
+/* =========================
+   Spotless
+========================= */
+spotless {
+	java {
+		target 'src/**/*.java'
+		indentWithSpaces(4)
+
+		trimTrailingWhitespace()
+		endWithNewline()
+
+		importOrder(
+				'java',
+				'javax',
+				'jakarta',
+				'org',
+				'com',
+				''
+		)
+		removeUnusedImports()
+	}
+}
+
+/* =========================
+   Checkstyle
+========================= */
+checkstyle {
+	toolVersion = "10.12.5"
+	configFile = file("${rootDir}/config/checkstyle/checkstyle.xml")
+}
+
+tasks.withType(Checkstyle).configureEach {
+	reports {
+		xml.required = false
+		html.required = true
+	}
+}
+
+/* =========================
+   CI Gate
+========================= */
+check.dependsOn(
+		spotlessCheck,
+		checkstyleMain
+)
