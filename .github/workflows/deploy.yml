@@ -1,0 +1,64 @@
+name: KAFKA CD (dev)
+
+on:
+  push:
+    branches:
+      - develop
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+
+      - name: Gradle Cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: |
+            ${{ runner.os }}-gradle-
+
+      - name: Build
+        run: |
+          chmod +x ./gradlew
+          ./gradlew build -x test
+
+      - name: Docker build & push
+        run: |
+          echo "${{ secrets.DOCKERHUB_PASSWORD }}" | docker login \
+            -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+
+          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/kafka-be:dev .
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/kafka-be:dev
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v1.0.0
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/kafka-be:dev
+
+            docker stop kafka-be || true
+            docker rm kafka-be || true
+
+            docker run -d \
+              --name kafka-be \
+              -p 8080:8080 \
+              --env-file /srv/hotspot/.env \
+              --restart always \
+              ${{ secrets.DOCKERHUB_USERNAME }}/kafka-be:dev
+            
+            docker image prune -f

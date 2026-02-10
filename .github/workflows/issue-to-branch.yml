@@ -1,0 +1,41 @@
+name: Create branch from issue
+
+on:
+  issues:
+    types: [opened]
+
+jobs:
+  create-branch:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository (default branch OK)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Extract Jira ticket
+        id: jira
+        run: |
+          BODY="${{ github.event.issue.body }}"
+          JIRA_KEY=$(echo "$BODY" | grep -Eo '[A-Z]+-[0-9]+' | head -n 1)
+
+          if [ -z "$JIRA_KEY" ]; then
+            echo "Jira ticket not found"
+            exit 1
+          fi
+
+          echo "jira_key=$JIRA_KEY" >> $GITHUB_OUTPUT
+
+      - name: Determine branch prefix
+        id: prefix
+        run: |
+          LABEL=$(echo '${{ toJson(github.event.issue.labels) }}' | jq -r '.[0].name // "feature"')
+          echo "prefix=$LABEL" >> $GITHUB_OUTPUT
+
+      - name: Create branch from develop (guaranteed)
+        run: |
+          git fetch origin develop
+          BRANCH_NAME="${{ steps.prefix.outputs.prefix }}/${{ steps.jira.outputs.jira_key }}"
+          git checkout -b "$BRANCH_NAME" origin/develop
+          git push origin "$BRANCH_NAME"
