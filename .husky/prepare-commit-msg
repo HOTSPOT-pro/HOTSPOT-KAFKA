@@ -1,0 +1,18 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+BRANCH="$(git rev-parse --abbrev-ref HEAD)"
+
+# feat/HOTSPOT-35, init/HOTSPOT-34, feat/HOTSPOT-35-login 등에서 HOTSPOT-35 추출
+TICKET="$(printf '%s' "$BRANCH" | grep -oiE '[A-Z][A-Z0-9]+-[0-9]+' | head -n 1 | tr '[:lower:]' '[:upper:]')"
+
+# 티켓이 없으면 그대로 종료(원하면 exit 1로 막아도 됨)
+[ -z "$TICKET" ] && exit 0
+
+MSG_FILE="$1"
+MSG="$(cat "$MSG_FILE")"
+
+# 이미 티켓이 앞에 있으면 종료 (대소문자 무시)
+printf '%s' "$MSG" | grep -qiE "^\[${TICKET}\]" && exit 0
+
+printf '[%s] %s\n' "$TICKET" "$MSG" > "$MSG_FILE"
