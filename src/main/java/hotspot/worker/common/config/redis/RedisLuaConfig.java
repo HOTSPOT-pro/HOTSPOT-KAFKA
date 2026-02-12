@@ -12,7 +12,7 @@ public class RedisLuaConfig {
 
     // 정책 검증 Lua Script
     @Bean
-    public DefaultRedisScript<List> policyBatchScript() {
+    public DefaultRedisScript<List> usageValidBatchScript() {
         DefaultRedisScript<List> script = new DefaultRedisScript<>();
         script.setLocation(new ClassPathResource("lua/usage_valid.lua"));
         script.setResultType(List.class);

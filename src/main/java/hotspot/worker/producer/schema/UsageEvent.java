@@ -1,6 +1,7 @@
 package hotspot.worker.producer.schema;
 
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.UUID;
 
 public record UsageEvent(
@@ -19,7 +20,7 @@ public record UsageEvent(
                 familyId,
                 usageKb,
                 randomApp(),
-                LocalDateTime.now()
+                LocalDateTime.now(ZoneId.of("Asia/Seoul"))
         );
     }
 

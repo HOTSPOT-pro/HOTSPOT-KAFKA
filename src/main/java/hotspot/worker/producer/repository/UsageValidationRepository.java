@@ -21,7 +21,10 @@ import lombok.RequiredArgsConstructor;
 public class UsageValidationRepository {
 
     private final RedisTemplate<String, String> redisTemplate;
-    private final DefaultRedisScript<List> masterBatchScript;
+    private final DefaultRedisScript<List> usageValidBatchScript;
+
+    private static final DateTimeFormatter HHMM_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
+    private static final DateTimeFormatter YYYYMM_FORMATTER = DateTimeFormatter.ofPattern("yyyyMM");
 
     private static final ZoneId ZONE_ID = ZoneId.of("Asia/Seoul");
 
@@ -37,16 +40,17 @@ public class UsageValidationRepository {
 
         args.add(String.valueOf(now.toEpochSecond()));
         args.add(events.get(0).appId());
+
         args.add(String.valueOf(now.getDayOfWeek().getValue()));
-        args.add(now.format(DateTimeFormatter.ofPattern("HH:mm")));
-        args.add(now.format(DateTimeFormatter.ofPattern("yyyyMM")));
+        args.add(now.format(HHMM_FORMATTER));
+        args.add(now.format(YYYYMM_FORMATTER));
 
         for (UsageEvent event : events) {
             args.add(String.valueOf(event.subId()));
         }
 
         List<?> result = redisTemplate.execute(
-                masterBatchScript,
+                usageValidBatchScript,
                 Collections.emptyList(),
                 args.toArray()
         );
