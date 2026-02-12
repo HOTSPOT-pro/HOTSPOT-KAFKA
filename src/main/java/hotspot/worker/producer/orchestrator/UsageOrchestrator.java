@@ -3,9 +3,9 @@ package hotspot.worker.producer.orchestrator;
 import java.util.List;
 import java.util.Set;
 
-import hotspot.worker.producer.repository.UsageValidationRepository;
 import org.springframework.stereotype.Component;
 
+import hotspot.worker.producer.repository.UsageValidationRepository;
 import hotspot.worker.producer.schema.UsageEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
