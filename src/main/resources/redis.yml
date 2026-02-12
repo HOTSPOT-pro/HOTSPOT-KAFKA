@@ -3,9 +3,11 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      timeout: 3s
       lettuce:
+        shutdown-timeout: 100ms
         pool:
-          max-active: 8
-          max-idle: 8
-          min-idle: 0
-          max-wait: 5s
+          max-active: 50
+          max-idle: 20
+          min-idle: 5
+          max-wait: 1s
