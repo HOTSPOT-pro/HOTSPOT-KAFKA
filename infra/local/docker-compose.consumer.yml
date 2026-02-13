@@ -20,7 +20,7 @@ services:
   # Kafka (KRaft, ZK 없음)
   # =======================
   kafka:
-    image: bitnami/kafka:latest
+    image: bitnamilegacy/kafka:latest
     container_name: local-kafka
     ports:
       - "9094:9094"   # 호스트(내 PC)에서 접속할 포트
