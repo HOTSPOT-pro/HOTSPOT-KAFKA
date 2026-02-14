@@ -2,12 +2,13 @@ package hotspot.worker.apps;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
-import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoField;
+import java.util.ArrayList;
+import java.util.List;
 
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.CommandLineRunner;
@@ -17,6 +18,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.util.StringUtils;
 
 @SpringBootApplication
 public class SeedRunner {
@@ -30,21 +32,13 @@ public class SeedRunner {
     @Bean
     CommandLineRunner run(JdbcTemplate jdbc, StringRedisTemplate redis, ApplicationArguments args) {
         return ignored -> {
-            String yyyymm = args.containsOption("month")
-                ? args.getOptionValues("month").get(0)
-                : YearMonth.now(ZoneId.of("Asia/Seoul")).format(DateTimeFormatter.ofPattern("yyyyMM"));
-
-            String giftAppId = args.containsOption("gift-app-id")
-                ? args.getOptionValues("gift-app-id").get(0)
-                : "DATA_GIFT";
-
             boolean flush = args.containsOption("flush");
             if (flush) {
                 deleteByPattern(redis, "limit:sub:*");
                 deleteByPattern(redis, "limit:family:*");
                 deleteByPattern(redis, "limit:family_sub:*");
-                deleteByPattern(redis, "limit:gift:*:*:" + yyyymm);
-                deleteByPattern(redis, "idx:gift:*:" + yyyymm);
+                deleteByPattern(redis, "limit:gift:*");
+                deleteByPattern(redis, "idx:gift:*");
 
                 deleteByPattern(redis, "block:repeat:*");
                 deleteByPattern(redis, "block:time:*");
@@ -58,14 +52,14 @@ public class SeedRunner {
             seedPlanLimit(jdbc, redis);
             seedFamilyLimit(jdbc, redis);
             seedFamilySubLimitPriorityAndIndexes(jdbc, redis);
-            seedPresentsAndDonorUsage(jdbc, redis, yyyymm, giftAppId);
+            seedPresentsAndDonorUsage(jdbc, redis);
 
             seedBlockRepeat(jdbc, redis);
             seedBlockTime(jdbc, redis);
             seedBlockImmediate(jdbc, redis);
             seedBlockApp(jdbc, redis);
 
-            System.out.println("Seed done. month=" + yyyymm + ", giftAppId=" + giftAppId);
+            System.out.println("Seed done.");
         };
     }
 
@@ -163,10 +157,9 @@ public class SeedRunner {
     // 선물 데이터로 gift 한도/인덱스와 제공자 사용량을 적재
     private void seedPresentsAndDonorUsage(
         JdbcTemplate jdbc,
-        StringRedisTemplate redis,
-        String yyyymm,
-        String giftAppId
+        StringRedisTemplate redis
     ) {
+        String giftAppId = resolveGiftAppId(jdbc);
         String sql = """
             SELECT id AS present_data_id,
                    target_sub_id,
@@ -174,11 +167,10 @@ public class SeedRunner {
                    data_amount,
                    created_time
             FROM present_data
-            WHERE to_char(created_time, 'YYYYMM') = ?
             """;
 
         redis.executePipelined((RedisCallback<Object>) conn -> {
-            jdbc.query(sql, ps -> ps.setString(1, yyyymm), rs -> {
+            jdbc.query(sql, rs -> {
                 long presentId = rs.getLong("present_data_id");
                 long targetSub = rs.getLong("target_sub_id");
                 long provideSub = rs.getLong("provide_sub_id");
@@ -186,6 +178,7 @@ public class SeedRunner {
 
                 LocalDateTime created = rs.getTimestamp("created_time").toLocalDateTime();
                 long prioEpoch = created.atZone(ZoneId.of("Asia/Seoul")).toEpochSecond();
+                String yyyymm = created.format(DateTimeFormatter.ofPattern("yyyyMM"));
                 String yyyymmdd = created.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
                 String giftId = Long.toString(presentId);
 
@@ -212,6 +205,21 @@ public class SeedRunner {
             });
             return null;
         });
+    }
+
+    private String resolveGiftAppId(JdbcTemplate jdbc) {
+        String sql = """
+            SELECT abs.app_blocked_service_id
+            FROM app_blocked_service abs
+            WHERE abs.is_deleted = false
+            ORDER BY abs.app_blocked_service_id
+            LIMIT 1
+            """;
+        String appId = jdbc.query(sql, rs -> rs.next() ? rs.getString("app_blocked_service_id") : null);
+        if (!StringUtils.hasText(appId)) {
+            throw new IllegalStateException("Gift app id not found in app_blocked_service");
+        }
+        return appId;
     }
 
     // 반복형 차단 정책(SCHEDULED)을 block:repeat에 적재
@@ -253,7 +261,7 @@ public class SeedRunner {
             jdbc.query(sql, rs -> {
                 long subId = rs.getLong("sub_id");
                 String policyId = rs.getString("policy_id");
-                String value = rs.getString("days_csv")
+                String value = normalizeDaysCsv(rs.getString("days_csv"))
                     + "|"
                     + rs.getString("start_hhmm")
                     + "|"
@@ -262,6 +270,36 @@ public class SeedRunner {
             });
             return null;
         });
+    }
+
+    private static String normalizeDaysCsv(String daysCsv) {
+        if (!StringUtils.hasText(daysCsv)) {
+            return "";
+        }
+        String[] tokens = daysCsv.split(",");
+        List<String> normalized = new ArrayList<>(tokens.length);
+        for (String token : tokens) {
+            String t = token.trim();
+            if (t.isEmpty()) {
+                continue;
+            }
+            normalized.add(mapDayTokenToNumber(t));
+        }
+        return String.join(",", normalized);
+    }
+
+    private static String mapDayTokenToNumber(String token) {
+        String upper = token.toUpperCase();
+        return switch (upper) {
+            case "MON" -> "1";
+            case "TUE" -> "2";
+            case "WED" -> "3";
+            case "THU" -> "4";
+            case "FRI" -> "5";
+            case "SAT" -> "6";
+            case "SUN" -> "7";
+            default -> token;
+        };
     }
 
     // 기간형 차단 정책(ONCE)을 block:time에 적재
@@ -354,7 +392,7 @@ public class SeedRunner {
     private void seedBlockApp(JdbcTemplate jdbc, StringRedisTemplate redis) {
         String sql = """
             SELECT bss.sub_id,
-                   abs.blocked_service_code AS app_id
+                   abs.app_blocked_service_id AS app_id
             FROM blocked_service_sub bss
             JOIN app_blocked_service abs
               ON abs.app_blocked_service_id = bss.blocked_service_id
