@@ -10,7 +10,6 @@ import java.time.temporal.ChronoField;
 import java.util.ArrayList;
 import java.util.List;
 
-import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
@@ -28,26 +27,23 @@ public class SeedRunner {
         SpringApplication.run(SeedRunner.class, args);
     }
 
-    // 실행 인자를 읽고 전체 시드 작업을 순서대로 수행
+    // Redis 초기화 후 전체 시드 작업을 순서대로 수행
     @Bean
-    CommandLineRunner run(JdbcTemplate jdbc, StringRedisTemplate redis, ApplicationArguments args) {
+    CommandLineRunner run(JdbcTemplate jdbc, StringRedisTemplate redis) {
         return ignored -> {
-            boolean flush = args.containsOption("flush");
-            if (flush) {
-                deleteByPattern(redis, "limit:sub:*");
-                deleteByPattern(redis, "limit:family:*");
-                deleteByPattern(redis, "limit:family_sub:*");
-                deleteByPattern(redis, "limit:gift:*");
-                deleteByPattern(redis, "idx:gift:*");
+            deleteByPattern(redis, "limit:sub:*");
+            deleteByPattern(redis, "limit:family:*");
+            deleteByPattern(redis, "limit:family_sub:*");
+            deleteByPattern(redis, "limit:gift:*");
+            deleteByPattern(redis, "idx:gift:*");
 
-                deleteByPattern(redis, "block:repeat:*");
-                deleteByPattern(redis, "block:time:*");
-                deleteByPattern(redis, "block:immediate:*");
-                deleteByPattern(redis, "block:app:*");
-                deleteByPattern(redis, "priority:family:*");
+            deleteByPattern(redis, "block:repeat:*");
+            deleteByPattern(redis, "block:time:*");
+            deleteByPattern(redis, "block:immediate:*");
+            deleteByPattern(redis, "block:app:*");
+            deleteByPattern(redis, "priority:family:*");
 
-                redis.delete("idx:sub:family");
-            }
+            redis.delete("idx:sub:family");
 
             seedPlanLimit(jdbc, redis);
             seedFamilyLimit(jdbc, redis);
@@ -161,7 +157,7 @@ public class SeedRunner {
     ) {
         String giftAppId = resolveGiftAppId(jdbc);
         String sql = """
-            SELECT id AS present_data_id,
+            SELECT present_data_id AS present_data_id,
                    target_sub_id,
                    provide_sub_id,
                    data_amount,
