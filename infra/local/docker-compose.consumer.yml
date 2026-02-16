@@ -16,6 +16,15 @@ services:
       timeout: 3s
       retries: 20
 
+  redisinsight:
+    image: redis/redisinsight:latest
+    container_name: local-redisinsight
+    ports:
+      - "5540:5540"
+    depends_on:
+      redis:
+        condition: service_healthy
+
   # =======================
   # Kafka (KRaft, ZK 없음)
   # =======================

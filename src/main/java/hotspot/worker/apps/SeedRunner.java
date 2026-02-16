@@ -9,11 +9,14 @@ import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoField;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BiConsumer;
+import java.util.function.Consumer;
 
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
+import org.springframework.data.redis.connection.RedisConnection;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -21,6 +24,7 @@ import org.springframework.util.StringUtils;
 
 @SpringBootApplication
 public class SeedRunner {
+    private static final int PIPELINE_BATCH_SIZE = 1000;
 
     // 시드 전용 애플리케이션 진입점
     public static void main(String[] args) {
@@ -84,14 +88,44 @@ public class SeedRunner {
               AND p.is_deleted = false
             """;
 
-        redis.executePipelined((RedisCallback<Object>) conn -> {
-            jdbc.query(sql, rs -> {
-                long subId = rs.getLong("sub_id");
-                long planKb = rs.getLong("plan_limit_kb");
-                String key = "limit:sub:" + subId;
-                conn.hSet(b(key), b("plan_limit"), b(Long.toString(planKb)));
+        List<PlanLimitRow> rows = jdbc.query(sql, (rs, rowNum) ->
+            new PlanLimitRow(rs.getLong("sub_id"), rs.getLong("plan_limit_kb"))
+        );
+
+        forEachBatch(rows, PIPELINE_BATCH_SIZE, batch -> {
+            redis.executePipelined((RedisCallback<Object>) conn -> {
+                for (PlanLimitRow row : batch) {
+                    String key = "limit:sub:" + row.subId();
+                    conn.hSet(b(key), b("plan_limit"), b(Long.toString(row.planLimitKb())));
+                }
+                return null;
             });
-            return null;
+        });
+    }
+
+    private record PlanLimitRow(long subId, long planLimitKb) {
+    }
+
+    private static <T> void forEachBatch(List<T> items, int batchSize, Consumer<List<T>> batchConsumer) {
+        for (int i = 0; i < items.size(); i += batchSize) {
+            int end = Math.min(i + batchSize, items.size());
+            batchConsumer.accept(items.subList(i, end));
+        }
+    }
+
+    private static <T> void writeInBatches(
+        StringRedisTemplate redis,
+        List<T> items,
+        int batchSize,
+        BiConsumer<RedisConnection, T> writer
+    ) {
+        forEachBatch(items, batchSize, currentBatch -> {
+            redis.executePipelined((RedisCallback<Object>) conn -> {
+                for (T item : currentBatch) {
+                    writer.accept(conn, item);
+                }
+                return null;
+            });
         });
     }
 
@@ -106,15 +140,17 @@ public class SeedRunner {
             WHERE f.is_deleted = false
             """;
 
-        redis.executePipelined((RedisCallback<Object>) conn -> {
-            jdbc.query(sql, rs -> {
-                long familyId = rs.getLong("family_id");
-                long famKb = rs.getLong("family_limit_kb");
-                String key = "limit:family:" + familyId;
-                conn.hSet(b(key), b("family_limit"), b(Long.toString(famKb)));
-            });
-            return null;
+        List<FamilyLimitRow> rows = jdbc.query(sql, (rs, rowNum) ->
+            new FamilyLimitRow(rs.getLong("family_id"), rs.getLong("family_limit_kb"))
+        );
+
+        writeInBatches(redis, rows, PIPELINE_BATCH_SIZE, (conn, row) -> {
+            String key = "limit:family:" + row.familyId();
+            conn.hSet(b(key), b("family_limit"), b(Long.toString(row.familyLimitKb())));
         });
+    }
+
+    private record FamilyLimitRow(long familyId, long familyLimitKb) {
     }
 
     // 가족 구성원 인덱스/우선순위/개별 가족 한도 키를 생성
@@ -127,27 +163,31 @@ public class SeedRunner {
             FROM family_sub
             """;
 
-        redis.executePipelined((RedisCallback<Object>) conn -> {
-            jdbc.query(sql, rs -> {
-                long familyId = rs.getLong("family_id");
-                long subId = rs.getLong("sub_id");
-                int priority = rs.getInt("priority");
-                long dataLimitKb = rs.getLong("data_limit");
+        List<FamilySubRow> rows = jdbc.query(sql, (rs, rowNum) ->
+            new FamilySubRow(
+                rs.getLong("family_id"),
+                rs.getLong("sub_id"),
+                rs.getInt("priority"),
+                rs.getLong("data_limit")
+            )
+        );
 
-                conn.hSet(b("idx:sub:family"), b(Long.toString(subId)), b(Long.toString(familyId)));
+        writeInBatches(redis, rows, PIPELINE_BATCH_SIZE, (conn, row) -> {
+            conn.hSet(b("idx:sub:family"), b(Long.toString(row.subId())), b(Long.toString(row.familyId())));
 
-                if (priority >= 0) {
-                    String prioKey = "priority:family:" + familyId;
-                    conn.zAdd(b(prioKey), (double) priority, b(Long.toString(subId)));
-                }
+            if (row.priority() >= 0) {
+                String prioKey = "priority:family:" + row.familyId();
+                conn.zAdd(b(prioKey), (double) row.priority(), b(Long.toString(row.subId())));
+            }
 
-                String limitKey = "limit:family_sub:" + familyId + ":" + subId;
-                String familyLimitValue = (dataLimitKb < 0) ? "-1" : Long.toString(dataLimitKb);
-                conn.hSet(b(limitKey), b("family_limit"), b(familyLimitValue));
-                conn.hSet(b(limitKey), b("priority"), b(Integer.toString(priority)));
-            });
-            return null;
+            String limitKey = "limit:family_sub:" + row.familyId() + ":" + row.subId();
+            String familyLimitValue = (row.dataLimitKb() < 0) ? "-1" : Long.toString(row.dataLimitKb());
+            conn.hSet(b(limitKey), b("family_limit"), b(familyLimitValue));
+            conn.hSet(b(limitKey), b("priority"), b(Integer.toString(row.priority())));
         });
+    }
+
+    private record FamilySubRow(long familyId, long subId, int priority, long dataLimitKb) {
     }
 
     // 선물 데이터로 gift 한도/인덱스와 제공자 사용량을 적재
@@ -165,42 +205,52 @@ public class SeedRunner {
             FROM present_data
             """;
 
-        redis.executePipelined((RedisCallback<Object>) conn -> {
-            jdbc.query(sql, rs -> {
-                long presentId = rs.getLong("present_data_id");
-                long targetSub = rs.getLong("target_sub_id");
-                long provideSub = rs.getLong("provide_sub_id");
-                long giftKb = rs.getLong("data_amount");
+        List<PresentRow> rows = jdbc.query(sql, (rs, rowNum) ->
+            new PresentRow(
+                rs.getLong("present_data_id"),
+                rs.getLong("target_sub_id"),
+                rs.getLong("provide_sub_id"),
+                rs.getLong("data_amount"),
+                rs.getTimestamp("created_time").toLocalDateTime()
+            )
+        );
 
-                LocalDateTime created = rs.getTimestamp("created_time").toLocalDateTime();
-                long prioEpoch = created.atZone(ZoneId.of("Asia/Seoul")).toEpochSecond();
-                String yyyymm = created.format(DateTimeFormatter.ofPattern("yyyyMM"));
-                String yyyymmdd = created.format(DateTimeFormatter.ofPattern("yyyyMMdd"));
-                String giftId = Long.toString(presentId);
+        writeInBatches(redis, rows, PIPELINE_BATCH_SIZE, (conn, row) -> {
+            long prioEpoch = row.createdTime().atZone(ZoneId.of("Asia/Seoul")).toEpochSecond();
+            String yyyymm = row.createdTime().format(DateTimeFormatter.ofPattern("yyyyMM"));
+            String yyyymmdd = row.createdTime().format(DateTimeFormatter.ofPattern("yyyyMMdd"));
+            String giftId = Long.toString(row.presentId());
 
-                String limitGiftKey = "limit:gift:" + targetSub + ":" + giftId + ":" + yyyymm;
-                conn.hSet(b(limitGiftKey), b("gift_limit"), b(Long.toString(giftKb)));
+            String limitGiftKey = "limit:gift:" + row.targetSubId() + ":" + giftId + ":" + yyyymm;
+            conn.hSet(b(limitGiftKey), b("gift_limit"), b(Long.toString(row.dataAmountKb())));
 
-                String idxGiftKey = "idx:gift:" + targetSub + ":" + yyyymm;
-                conn.zAdd(b(idxGiftKey), (double) prioEpoch, b(giftId));
+            String idxGiftKey = "idx:gift:" + row.targetSubId() + ":" + yyyymm;
+            conn.zAdd(b(idxGiftKey), (double) prioEpoch, b(giftId));
 
-                String donorMonKey = "usage:sub:" + provideSub + ":" + yyyymm;
-                conn.hIncrBy(b(donorMonKey), b("plan_used"), giftKb);
+            String donorMonKey = "usage:sub:" + row.provideSubId() + ":" + yyyymm;
+            conn.hIncrBy(b(donorMonKey), b("plan_used"), row.dataAmountKb());
 
-                String donorDayKey = "usage:sub:" + provideSub + ":" + yyyymmdd;
-                conn.hIncrBy(b(donorDayKey), b("plan_used"), giftKb);
+            String donorDayKey = "usage:sub:" + row.provideSubId() + ":" + yyyymmdd;
+            conn.hIncrBy(b(donorDayKey), b("plan_used"), row.dataAmountKb());
 
-                String donorMonAppKey = "usage:app:" + provideSub + ":" + yyyymm;
-                conn.zIncrBy(b(donorMonAppKey), giftKb, b(giftAppId));
+            String donorMonAppKey = "usage:app:" + row.provideSubId() + ":" + yyyymm;
+            conn.zIncrBy(b(donorMonAppKey), row.dataAmountKb(), b(giftAppId));
 
-                String donorDayAppKey = "usage:app:" + provideSub + ":" + yyyymmdd;
-                conn.zIncrBy(b(donorDayAppKey), giftKb, b(giftAppId));
+            String donorDayAppKey = "usage:app:" + row.provideSubId() + ":" + yyyymmdd;
+            conn.zIncrBy(b(donorDayAppKey), row.dataAmountKb(), b(giftAppId));
 
-                String usageGiftKey = "usage:gift:" + targetSub + ":" + giftId + ":" + yyyymm;
-                conn.hSetNX(b(usageGiftKey), b("gift_used"), b("0"));
-            });
-            return null;
+            String usageGiftKey = "usage:gift:" + row.targetSubId() + ":" + giftId + ":" + yyyymm;
+            conn.hSetNX(b(usageGiftKey), b("gift_used"), b("0"));
         });
+    }
+
+    private record PresentRow(
+        long presentId,
+        long targetSubId,
+        long provideSubId,
+        long dataAmountKb,
+        LocalDateTime createdTime
+    ) {
     }
 
     private String resolveGiftAppId(JdbcTemplate jdbc) {
@@ -253,19 +303,33 @@ public class SeedRunner {
               AND UPPER(COALESCE(s.snap ->> 'policyType', s.snap ->> 'policy_type', '')) IN ('SCHEDULED')
             """;
 
-        redis.executePipelined((RedisCallback<Object>) conn -> {
-            jdbc.query(sql, rs -> {
-                long subId = rs.getLong("sub_id");
-                String policyId = rs.getString("policy_id");
-                String value = normalizeDaysCsv(rs.getString("days_csv"))
-                    + "|"
-                    + rs.getString("start_hhmm")
-                    + "|"
-                    + rs.getString("end_hhmm");
-                conn.hSet(b("block:repeat:" + subId), b(policyId), b(value));
-            });
-            return null;
+        List<BlockRepeatRow> rows = jdbc.query(sql, (rs, rowNum) ->
+            new BlockRepeatRow(
+                rs.getLong("sub_id"),
+                rs.getString("policy_id"),
+                rs.getString("days_csv"),
+                rs.getString("start_hhmm"),
+                rs.getString("end_hhmm")
+            )
+        );
+
+        writeInBatches(redis, rows, PIPELINE_BATCH_SIZE, (conn, row) -> {
+            String value = normalizeDaysCsv(row.daysCsv())
+                + "|"
+                + row.startHhmm()
+                + "|"
+                + row.endHhmm();
+            conn.hSet(b("block:repeat:" + row.subId()), b(row.policyId()), b(value));
         });
+    }
+
+    private record BlockRepeatRow(
+        long subId,
+        String policyId,
+        String daysCsv,
+        String startHhmm,
+        String endHhmm
+    ) {
     }
 
     private static String normalizeDaysCsv(String daysCsv) {
@@ -316,17 +380,23 @@ public class SeedRunner {
               AND UPPER(COALESCE(s.snap ->> 'policyType', s.snap ->> 'policy_type', '')) = 'ONCE'
             """;
 
-        redis.executePipelined((RedisCallback<Object>) conn -> {
-            jdbc.query(sql, rs -> {
-                long subId = rs.getLong("sub_id");
-                String policyId = rs.getString("policy_id");
-                long expireEpoch = parseOnceEndToEpoch(rs.getString("once_end_value"));
-                if (expireEpoch > 0) {
-                    conn.zAdd(b("block:time:" + subId), (double) expireEpoch, b(policyId));
-                }
-            });
-            return null;
+        List<BlockTimeRow> rows = jdbc.query(sql, (rs, rowNum) ->
+            new BlockTimeRow(
+                rs.getLong("sub_id"),
+                rs.getString("policy_id"),
+                rs.getString("once_end_value")
+            )
+        );
+
+        writeInBatches(redis, rows, PIPELINE_BATCH_SIZE, (conn, row) -> {
+            long expireEpoch = parseOnceEndToEpoch(row.onceEndValue());
+            if (expireEpoch > 0) {
+                conn.zAdd(b("block:time:" + row.subId()), (double) expireEpoch, b(row.policyId()));
+            }
         });
+    }
+
+    private record BlockTimeRow(long subId, String policyId, String onceEndValue) {
     }
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -376,11 +446,10 @@ public class SeedRunner {
               AND s.is_locked = true
             """;
 
-        redis.executePipelined((RedisCallback<Object>) conn -> {
-            jdbc.query(sql, rs -> {
-                conn.set(b("block:immediate:" + rs.getLong("sub_id")), b("1"));
-            });
-            return null;
+        List<Long> subIds = jdbc.query(sql, (rs, rowNum) -> rs.getLong("sub_id"));
+
+        writeInBatches(redis, subIds, PIPELINE_BATCH_SIZE, (conn, subId) -> {
+            conn.set(b("block:immediate:" + subId), b("1"));
         });
     }
 
@@ -396,13 +465,15 @@ public class SeedRunner {
               AND abs.is_deleted = false
             """;
 
-        redis.executePipelined((RedisCallback<Object>) conn -> {
-            jdbc.query(sql, rs -> {
-                long subId = rs.getLong("sub_id");
-                String appId = rs.getString("app_id");
-                conn.sAdd(b("block:app:" + subId), b(appId));
-            });
-            return null;
+        List<BlockAppRow> rows = jdbc.query(sql, (rs, rowNum) ->
+            new BlockAppRow(rs.getLong("sub_id"), rs.getString("app_id"))
+        );
+
+        writeInBatches(redis, rows, PIPELINE_BATCH_SIZE, (conn, row) -> {
+            conn.sAdd(b("block:app:" + row.subId()), b(row.appId()));
         });
+    }
+
+    private record BlockAppRow(long subId, String appId) {
     }
 }
