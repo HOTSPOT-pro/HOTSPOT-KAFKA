@@ -14,6 +14,7 @@ spring:
       batch-size: 16384
 
     consumer:
+      group-id: ${KAFKA_CONSUMER_GROUP_ID:usage-consumer-group}
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       auto-offset-reset: earliest
@@ -21,3 +22,8 @@ spring:
 
     listener:
       ack-mode: manual
+
+app:
+  topics:
+    usage-events: ${KAFKA_TOPIC_USAGE_EVENTS:usage-events}
+    usage-alert-events: ${KAFKA_TOPIC_USAGE_ALERT_EVENTS:usage-alert-events}
