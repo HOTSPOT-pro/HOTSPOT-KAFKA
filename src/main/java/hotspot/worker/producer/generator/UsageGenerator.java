@@ -1,12 +1,9 @@
 package hotspot.worker.producer.generator;
 
-import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.ThreadLocalRandom;
 
-import hotspot.worker.producer.schema.AppType;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
 
@@ -15,7 +12,6 @@ import hotspot.worker.producer.schema.UsageEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-import static java.time.LocalDateTime.now;
 
 @Slf4j
 @Component
@@ -72,14 +68,7 @@ public class UsageGenerator {
                             .nextInt(MIN_USAGE_KB, MAX_USAGE_KB + 1);
 
             events.add(
-                    new UsageEvent(
-                            UUID.randomUUID().toString(),
-                            subId,
-                            familyId,
-                            usageKb,
-                            AppType.randomAppId(),
-                            now(ZoneId.of("Asia/Seoul"))
-                    )
+                    UsageEvent.create(subId, familyId, usageKb)
             );
         }
 
