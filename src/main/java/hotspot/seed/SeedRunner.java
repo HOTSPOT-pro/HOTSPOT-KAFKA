@@ -36,7 +36,7 @@ public class SeedRunner {
     }
 
     @Bean
-    // 애플리케이션 시작 시 시드 전체를 순서대로 수행
+        // 애플리케이션 시작 시 시드 전체를 순서대로 수행
     CommandLineRunner run(JdbcTemplate jdbc, StringRedisTemplate redis) {
         return ignored -> {
             deleteByPattern(redis, "limit:sub:*");
@@ -52,6 +52,7 @@ public class SeedRunner {
             deleteByPattern(redis, "priority:family:*");
 
             redis.delete("idx:sub:family");
+            redis.delete("idx:family:subs");
 
             seedPlanLimit(jdbc, redis);
             seedFamilyLimit(jdbc, redis);
@@ -82,17 +83,17 @@ public class SeedRunner {
     // 구독 플랜 한도(limit:sub)를 적재
     private void seedPlanLimit(JdbcTemplate jdbc, StringRedisTemplate redis) {
         String sql = """
-            SELECT s.sub_id AS sub_id,
-                   p.plan_data_amount AS plan_limit_kb
-            FROM subscription s
-            JOIN plan p
-              ON p.plan_id = s.plan_id
-            WHERE s.is_deleted = false
-              AND p.is_deleted = false
-            """;
+                SELECT s.sub_id AS sub_id,
+                       p.plan_data_amount AS plan_limit_kb
+                FROM subscription s
+                JOIN plan p
+                  ON p.plan_id = s.plan_id
+                WHERE s.is_deleted = false
+                  AND p.is_deleted = false
+                """;
 
         List<PlanLimitRow> rows = jdbc.query(sql, (rs, rowNum) ->
-            new PlanLimitRow(rs.getLong("sub_id"), rs.getLong("plan_limit_kb"))
+                new PlanLimitRow(rs.getLong("sub_id"), rs.getLong("plan_limit_kb"))
         );
 
         forEachBatch(rows, PIPELINE_BATCH_SIZE, batch -> {
@@ -117,10 +118,10 @@ public class SeedRunner {
     }
 
     private static <T> void writeInBatches(
-        StringRedisTemplate redis,
-        List<T> items,
-        int batchSize,
-        BiConsumer<RedisConnection, T> writer
+            StringRedisTemplate redis,
+            List<T> items,
+            int batchSize,
+            BiConsumer<RedisConnection, T> writer
     ) {
         forEachBatch(items, batchSize, currentBatch -> {
             redis.executePipelined((RedisCallback<Object>) conn -> {
@@ -135,16 +136,16 @@ public class SeedRunner {
     // 가족 풀 한도(limit:family)를 적재
     private void seedFamilyLimit(JdbcTemplate jdbc, StringRedisTemplate redis) {
         String sql = """
-            SELECT DISTINCT fs.family_id,
-                            f.family_data_amount AS family_limit_kb
-            FROM family_sub fs
-            JOIN family f
-              ON f.family_id = fs.family_id
-            WHERE f.is_deleted = false
-            """;
+                SELECT DISTINCT fs.family_id,
+                                f.family_data_amount AS family_limit_kb
+                FROM family_sub fs
+                JOIN family f
+                  ON f.family_id = fs.family_id
+                WHERE f.is_deleted = false
+                """;
 
         List<FamilyLimitRow> rows = jdbc.query(sql, (rs, rowNum) ->
-            new FamilyLimitRow(rs.getLong("family_id"), rs.getLong("family_limit_kb"))
+                new FamilyLimitRow(rs.getLong("family_id"), rs.getLong("family_limit_kb"))
         );
 
         writeInBatches(redis, rows, PIPELINE_BATCH_SIZE, (conn, row) -> {
@@ -159,24 +160,30 @@ public class SeedRunner {
     // 가족 구성원별 한도/우선순위 및 인덱스를 적재
     private void seedFamilySubLimitPriorityAndIndexes(JdbcTemplate jdbc, StringRedisTemplate redis) {
         String sql = """
-            SELECT family_id,
-                   sub_id,
-                   priority,
-                   data_limit
-            FROM family_sub
-            """;
+                SELECT family_id,
+                       sub_id,
+                       priority,
+                       data_limit
+                FROM family_sub
+                """;
 
         List<FamilySubRow> rows = jdbc.query(sql, (rs, rowNum) ->
-            new FamilySubRow(
-                rs.getLong("family_id"),
-                rs.getLong("sub_id"),
-                rs.getInt("priority"),
-                rs.getLong("data_limit")
-            )
+                new FamilySubRow(
+                        rs.getLong("family_id"),
+                        rs.getLong("sub_id"),
+                        rs.getInt("priority"),
+                        rs.getLong("data_limit")
+                )
         );
 
         writeInBatches(redis, rows, PIPELINE_BATCH_SIZE, (conn, row) -> {
             conn.hSet(b("idx:sub:family"), b(Long.toString(row.subId())), b(Long.toString(row.familyId())));
+
+            // 🔥 모든 family 소속 subId를 하나의 SET에 저장
+            conn.sAdd(
+                    b("idx:family:subs"),
+                    b(Long.toString(row.subId()))
+            );
 
             if (row.priority() >= 0) {
                 String prioKey = "priority:family:" + row.familyId();
@@ -195,27 +202,27 @@ public class SeedRunner {
 
     // 선물 데이터 한도와 기부자 사용량을 초기화
     private void seedPresentsAndDonorUsage(
-        JdbcTemplate jdbc,
-        StringRedisTemplate redis
+            JdbcTemplate jdbc,
+            StringRedisTemplate redis
     ) {
         String giftAppId = resolveGiftAppId(jdbc);
         String sql = """
-            SELECT present_data_id AS present_data_id,
-                   target_sub_id,
-                   provide_sub_id,
-                   data_amount,
-                   created_time
-            FROM present_data
-            """;
+                SELECT present_data_id AS present_data_id,
+                       target_sub_id,
+                       provide_sub_id,
+                       data_amount,
+                       created_time
+                FROM present_data
+                """;
 
         List<PresentRow> rows = jdbc.query(sql, (rs, rowNum) ->
-            new PresentRow(
-                rs.getLong("present_data_id"),
-                rs.getLong("target_sub_id"),
-                rs.getLong("provide_sub_id"),
-                rs.getLong("data_amount"),
-                rs.getTimestamp("created_time").toLocalDateTime()
-            )
+                new PresentRow(
+                        rs.getLong("present_data_id"),
+                        rs.getLong("target_sub_id"),
+                        rs.getLong("provide_sub_id"),
+                        rs.getLong("data_amount"),
+                        rs.getTimestamp("created_time").toLocalDateTime()
+                )
         );
 
         writeInBatches(redis, rows, PIPELINE_BATCH_SIZE, (conn, row) -> {
@@ -248,22 +255,22 @@ public class SeedRunner {
     }
 
     private record PresentRow(
-        long presentId,
-        long targetSubId,
-        long provideSubId,
-        long dataAmountKb,
-        LocalDateTime createdTime
+            long presentId,
+            long targetSubId,
+            long provideSubId,
+            long dataAmountKb,
+            LocalDateTime createdTime
     ) {
     }
 
     private String resolveGiftAppId(JdbcTemplate jdbc) {
         String sql = """
-            SELECT abs.app_blocked_service_id
-            FROM app_blocked_service abs
-            WHERE abs.is_deleted = false
-            ORDER BY abs.app_blocked_service_id
-            LIMIT 1
-            """;
+                SELECT abs.app_blocked_service_id
+                FROM app_blocked_service abs
+                WHERE abs.is_deleted = false
+                ORDER BY abs.app_blocked_service_id
+                LIMIT 1
+                """;
         String appId = jdbc.query(sql, rs -> rs.next() ? rs.getString("app_blocked_service_id") : null);
         if (!StringUtils.hasText(appId)) {
             throw new IllegalStateException("Gift app id not found in app_blocked_service");
@@ -274,64 +281,64 @@ public class SeedRunner {
     // 반복 차단 정책(block:repeat) 적재
     private void seedBlockRepeat(JdbcTemplate jdbc, StringRedisTemplate redis) {
         String sql = """
-            SELECT ps.sub_id,
-                   ps.policy_sub_id AS policy_id,
-                   COALESCE(
-                     NULLIF(s.snap ->> 'days_csv', ''),
-                     NULLIF(array_to_string(ARRAY(
-                       SELECT jsonb_array_elements_text(s.snap -> 'data' -> 'days')
-                     ), ','), ''),
-                     NULLIF(array_to_string(ARRAY(
-                       SELECT jsonb_array_elements_text(s.snap -> 'days')
-                     ), ','), ''),
-                     ''
-                   ) AS days_csv,
-                   COALESCE(
-                     NULLIF(s.snap ->> 'start_hhmm', ''),
-                     NULLIF(s.snap -> 'data' ->> 'startTime', ''),
-                     NULLIF(s.snap ->> 'startTime', ''),
-                     ''
-                   ) AS start_hhmm,
-                   COALESCE(
-                     NULLIF(s.snap ->> 'end_hhmm', ''),
-                     NULLIF(s.snap -> 'data' ->> 'endTime', ''),
-                     NULLIF(s.snap ->> 'endTime', ''),
-                     ''
-                    ) AS end_hhmm
-            FROM policy_sub ps
-            CROSS JOIN LATERAL (
-                SELECT ps.date_snapshot::jsonb AS snap
-            ) s
-            WHERE ps.is_deleted = false
-              AND UPPER(COALESCE(s.snap ->> 'policyType', s.snap ->> 'policy_type', '')) IN ('SCHEDULED')
-            """;
+                SELECT ps.sub_id,
+                       ps.policy_sub_id AS policy_id,
+                       COALESCE(
+                         NULLIF(s.snap ->> 'days_csv', ''),
+                         NULLIF(array_to_string(ARRAY(
+                           SELECT jsonb_array_elements_text(s.snap -> 'data' -> 'days')
+                         ), ','), ''),
+                         NULLIF(array_to_string(ARRAY(
+                           SELECT jsonb_array_elements_text(s.snap -> 'days')
+                         ), ','), ''),
+                         ''
+                       ) AS days_csv,
+                       COALESCE(
+                         NULLIF(s.snap ->> 'start_hhmm', ''),
+                         NULLIF(s.snap -> 'data' ->> 'startTime', ''),
+                         NULLIF(s.snap ->> 'startTime', ''),
+                         ''
+                       ) AS start_hhmm,
+                       COALESCE(
+                         NULLIF(s.snap ->> 'end_hhmm', ''),
+                         NULLIF(s.snap -> 'data' ->> 'endTime', ''),
+                         NULLIF(s.snap ->> 'endTime', ''),
+                         ''
+                        ) AS end_hhmm
+                FROM policy_sub ps
+                CROSS JOIN LATERAL (
+                    SELECT ps.date_snapshot::jsonb AS snap
+                ) s
+                WHERE ps.is_deleted = false
+                  AND UPPER(COALESCE(s.snap ->> 'policyType', s.snap ->> 'policy_type', '')) IN ('SCHEDULED')
+                """;
 
         List<BlockRepeatRow> rows = jdbc.query(sql, (rs, rowNum) ->
-            new BlockRepeatRow(
-                rs.getLong("sub_id"),
-                rs.getString("policy_id"),
-                rs.getString("days_csv"),
-                rs.getString("start_hhmm"),
-                rs.getString("end_hhmm")
-            )
+                new BlockRepeatRow(
+                        rs.getLong("sub_id"),
+                        rs.getString("policy_id"),
+                        rs.getString("days_csv"),
+                        rs.getString("start_hhmm"),
+                        rs.getString("end_hhmm")
+                )
         );
 
         writeInBatches(redis, rows, PIPELINE_BATCH_SIZE, (conn, row) -> {
             String value = normalizeDaysCsv(row.daysCsv())
-                + "|"
-                + row.startHhmm()
-                + "|"
-                + row.endHhmm();
+                    + "|"
+                    + row.startHhmm()
+                    + "|"
+                    + row.endHhmm();
             conn.hSet(b("block:repeat:" + row.subId()), b(row.policyId()), b(value));
         });
     }
 
     private record BlockRepeatRow(
-        long subId,
-        String policyId,
-        String daysCsv,
-        String startHhmm,
-        String endHhmm
+            long subId,
+            String policyId,
+            String daysCsv,
+            String startHhmm,
+            String endHhmm
     ) {
     }
 
@@ -368,27 +375,27 @@ public class SeedRunner {
     // 기간 차단 정책(block:time) 적재
     private void seedBlockTime(JdbcTemplate jdbc, StringRedisTemplate redis) {
         String sql = """
-            SELECT ps.sub_id,
-                   ps.policy_sub_id AS policy_id,
-                   COALESCE(
-                     NULLIF(s.snap ->> 'expire_epoch', ''),
-                     NULLIF(s.snap -> 'data' ->> 'endTime', ''),
-                     NULLIF(s.snap ->> 'endTime', '')
-                   ) AS once_end_value
-            FROM policy_sub ps
-            CROSS JOIN LATERAL (
-                SELECT ps.date_snapshot::jsonb AS snap
-            ) s
-            WHERE ps.is_deleted = false
-              AND UPPER(COALESCE(s.snap ->> 'policyType', s.snap ->> 'policy_type', '')) = 'ONCE'
-            """;
+                SELECT ps.sub_id,
+                       ps.policy_sub_id AS policy_id,
+                       COALESCE(
+                         NULLIF(s.snap ->> 'expire_epoch', ''),
+                         NULLIF(s.snap -> 'data' ->> 'endTime', ''),
+                         NULLIF(s.snap ->> 'endTime', '')
+                       ) AS once_end_value
+                FROM policy_sub ps
+                CROSS JOIN LATERAL (
+                    SELECT ps.date_snapshot::jsonb AS snap
+                ) s
+                WHERE ps.is_deleted = false
+                  AND UPPER(COALESCE(s.snap ->> 'policyType', s.snap ->> 'policy_type', '')) = 'ONCE'
+                """;
 
         List<BlockTimeRow> rows = jdbc.query(sql, (rs, rowNum) ->
-            new BlockTimeRow(
-                rs.getLong("sub_id"),
-                rs.getString("policy_id"),
-                rs.getString("once_end_value")
-            )
+                new BlockTimeRow(
+                        rs.getLong("sub_id"),
+                        rs.getString("policy_id"),
+                        rs.getString("once_end_value")
+                )
         );
 
         writeInBatches(redis, rows, PIPELINE_BATCH_SIZE, (conn, row) -> {
@@ -404,19 +411,19 @@ public class SeedRunner {
 
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
     private static final DateTimeFormatter ONCE_DT_DOT = new DateTimeFormatterBuilder()
-        .appendPattern("yyyy.MM.dd'T'HH:mm")
-        .optionalStart()
-        .appendLiteral(':')
-        .appendValue(ChronoField.SECOND_OF_MINUTE, 2)
-        .optionalEnd()
-        .toFormatter();
+            .appendPattern("yyyy.MM.dd'T'HH:mm")
+            .optionalStart()
+            .appendLiteral(':')
+            .appendValue(ChronoField.SECOND_OF_MINUTE, 2)
+            .optionalEnd()
+            .toFormatter();
     private static final DateTimeFormatter ONCE_DT_DASH = new DateTimeFormatterBuilder()
-        .appendPattern("yyyy-MM-dd'T'HH:mm")
-        .optionalStart()
-        .appendLiteral(':')
-        .appendValue(ChronoField.SECOND_OF_MINUTE, 2)
-        .optionalEnd()
-        .toFormatter();
+            .appendPattern("yyyy-MM-dd'T'HH:mm")
+            .optionalStart()
+            .appendLiteral(':')
+            .appendValue(ChronoField.SECOND_OF_MINUTE, 2)
+            .optionalEnd()
+            .toFormatter();
 
     private static long parseOnceEndToEpoch(String value) {
         if (value == null) {
@@ -443,11 +450,11 @@ public class SeedRunner {
     // 즉시 차단 정책(block:immediate) 적재
     private void seedBlockImmediate(JdbcTemplate jdbc, StringRedisTemplate redis) {
         String sql = """
-            SELECT s.sub_id
-            FROM subscription s
-            WHERE s.is_deleted = false
-              AND s.is_locked = true
-            """;
+                SELECT s.sub_id
+                FROM subscription s
+                WHERE s.is_deleted = false
+                  AND s.is_locked = true
+                """;
 
         List<Long> subIds = jdbc.query(sql, (rs, rowNum) -> rs.getLong("sub_id"));
 
@@ -459,17 +466,17 @@ public class SeedRunner {
     // 앱 차단 목록(block:app)을 적재
     private void seedBlockApp(JdbcTemplate jdbc, StringRedisTemplate redis) {
         String sql = """
-            SELECT bss.sub_id,
-                   abs.app_blocked_service_id AS app_id
-            FROM blocked_service_sub bss
-            JOIN app_blocked_service abs
-              ON abs.app_blocked_service_id = bss.blocked_service_id
-            WHERE bss.is_deleted = false
-              AND abs.is_deleted = false
-            """;
+                SELECT bss.sub_id,
+                       abs.app_blocked_service_id AS app_id
+                FROM blocked_service_sub bss
+                JOIN app_blocked_service abs
+                  ON abs.app_blocked_service_id = bss.blocked_service_id
+                WHERE bss.is_deleted = false
+                  AND abs.is_deleted = false
+                """;
 
         List<BlockAppRow> rows = jdbc.query(sql, (rs, rowNum) ->
-            new BlockAppRow(rs.getLong("sub_id"), rs.getString("app_id"))
+                new BlockAppRow(rs.getLong("sub_id"), rs.getString("app_id"))
         );
 
         writeInBatches(redis, rows, PIPELINE_BATCH_SIZE, (conn, row) -> {
