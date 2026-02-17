@@ -1,10 +1,10 @@
-package hotspot.worker.consumer.service;
+package hotspot.worker.consumer.usage.service;
 
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
 
-import hotspot.worker.consumer.schema.UsageEvent;
+import hotspot.worker.consumer.usage.schema.UsageEvent;
 
 /**
  * usage-events 수신 진입점

@@ -1,4 +1,4 @@
-package hotspot.worker.consumer.domain;
+package hotspot.worker.consumer.usage.domain;
 
 /**
  * fired_gifts 항목 1건을 담는 DTO

@@ -1,4 +1,4 @@
-package hotspot.worker.consumer.service;
+package hotspot.worker.consumer.usage.service;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
@@ -11,10 +11,10 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import hotspot.worker.consumer.domain.GiftFire;
-import hotspot.worker.consumer.domain.UsageLuaResult;
-import hotspot.worker.consumer.schema.UsageEvent;
-import hotspot.worker.consumer.support.RedisKeyBuilder;
+import hotspot.worker.consumer.usage.domain.GiftFire;
+import hotspot.worker.consumer.usage.domain.UsageLuaResult;
+import hotspot.worker.consumer.usage.schema.UsageEvent;
+import hotspot.worker.consumer.usage.support.RedisKeyBuilder;
 
 /**
  * usage_atomic.lua 실행과 결과 파싱을 담당하는 서비스

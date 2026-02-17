@@ -1,4 +1,4 @@
-package hotspot.worker.consumer.domain;
+package hotspot.worker.consumer.usage.domain;
 
 import java.util.List;
 

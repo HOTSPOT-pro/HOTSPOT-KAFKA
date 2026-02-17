@@ -1,4 +1,4 @@
-package hotspot.worker.consumer.support;
+package hotspot.worker.consumer.usage.support;
 
 import java.time.Instant;
 import java.time.ZoneId;

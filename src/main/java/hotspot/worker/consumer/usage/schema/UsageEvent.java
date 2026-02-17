@@ -1,4 +1,4 @@
-package hotspot.worker.consumer.schema;
+package hotspot.worker.consumer.usage.schema;
 
 import java.time.Instant;
 

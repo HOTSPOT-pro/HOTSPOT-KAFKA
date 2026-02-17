@@ -5,7 +5,7 @@ import java.time.ZoneId;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import hotspot.worker.consumer.support.RedisKeyBuilder;
+import hotspot.worker.consumer.usage.support.RedisKeyBuilder;
 
 /**
  * Consumer에서 사용하는 Redis 보조 설정

@@ -10,7 +10,7 @@ import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.ExponentialBackOff;
 
-import hotspot.worker.consumer.schema.UsageEvent;
+import hotspot.worker.consumer.usage.schema.UsageEvent;
 
 @Configuration
 public class KafkaConsumerConfig {
