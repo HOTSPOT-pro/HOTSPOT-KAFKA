@@ -21,7 +21,7 @@ public class UsageEventsConsumer {
     // 처리 성공 시에만 수동 ACK를 수행
     @KafkaListener(
             topics = "${app.topics.usage-events}",
-            containerFactory = "kafkaListenerContainerFactory"
+            containerFactory = "usageKafkaListenerContainerFactory"
     )
     public void onMessage(UsageEvent ev, Acknowledgment ack) {
         handler.handle(ev);
