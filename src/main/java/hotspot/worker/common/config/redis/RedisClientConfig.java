@@ -1,4 +1,4 @@
-package hotspot.worker.consumer.config;
+package hotspot.worker.common.config.redis;
 
 import java.time.ZoneId;
 
