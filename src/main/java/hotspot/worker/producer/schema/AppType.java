@@ -9,40 +9,46 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public enum AppType {
 
-    MSG_KAKAO,
-    MSG_LINE,
+    MSG_KAKAO(1L),
+    MSG_LINE(2L),
 
-    MEDIA_YOUTUBE,
-    MEDIA_NETFLIX,
-    MEDIA_CHZZK,
-    MEDIA_SOOP,
+    MEDIA_YOUTUBE(3L),
+    MEDIA_NETFLIX(4L),
+    MEDIA_CHZZK(5L),
+    MEDIA_SOOP(6L),
 
-    SNS_INSTAGRAM,
-    SNS_TIKTOK,
-    SNS_FACEBOOK,
+    SNS_INSTAGRAM(7L),
+    SNS_TIKTOK(8L),
+    SNS_FACEBOOK(9L),
 
-    STUDY_EBS,
-    STUDY_MEGA,
+    STUDY_EBS(10L),
+    STUDY_MEGA(11L),
 
-    FIN_UPBIT,
-    FIN_KIWOOM,
+    FIN_UPBIT(12L),
+    FIN_KIWOOM(13L),
 
-    WEB_CHROME,
-    WEB_SAFARI,
+    WEB_CHROME(14L),
+    WEB_SAFARI(15L),
 
-    GAME_TFT,
-    GAME_PUBG_M,
+    GAME_TFT(16L),
+    GAME_PUBG_M(17L),
 
-    TOON_NAVER,
-    TOON_KAKAO,
+    TOON_NAVER(18L),
+    TOON_KAKAO(19L),
 
-    GIFT_DATA;
+    GIFT_DATA(20L);
+
+    private final Long appId;
 
     private static final AppType[] VALUES = values();
 
-    public static String randomCode() {
+    public static AppType random() {
         return VALUES[
                 ThreadLocalRandom.current().nextInt(VALUES.length)
-                ].name();
+                ];
+    }
+
+    public static Long randomAppId() {
+        return random().getAppId();
     }
 }
