@@ -8,6 +8,7 @@ import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import hotspot.worker.consumer.domain.GiftFire;
@@ -111,12 +112,24 @@ public class UsageLuaExecutor {
 
     // fired_gifts JSON을 GiftFire 리스트로 변환
     private List<GiftFire> parseGiftFires(String json) {
-        if (json == null || json.isBlank() || "[]".equals(json)) {
+        if (json == null || json.isBlank()) {
             return List.of();
         }
         try {
-            return om.readValue(json, new TypeReference<List<GiftFire>>() {
-            });
+            JsonNode node = om.readTree(json);
+            if (node == null || node.isNull() || node.isMissingNode()) {
+                return List.of();
+            }
+            if (node.isObject() && node.isEmpty()) {
+                return List.of();
+            }
+            if (node.isArray()) {
+                return om.convertValue(node, new TypeReference<List<GiftFire>>() {
+                });
+            }
+            throw new IllegalStateException("Unexpected fired_gifts JSON shape: " + json);
+        } catch (IllegalStateException e) {
+            throw e;
         } catch (Exception e) {
             throw new IllegalStateException("Failed to parse fired_gifts JSON: " + json, e);
         }
