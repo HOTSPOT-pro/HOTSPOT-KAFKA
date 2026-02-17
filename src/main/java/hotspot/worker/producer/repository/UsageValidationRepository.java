@@ -47,7 +47,7 @@ public class UsageValidationRepository {
             args.add(event.eventId());
             args.add(String.valueOf(event.subId()));
             args.add(String.valueOf(event.familyId()));
-            args.add(String.valueOf(event.dataUsage()));
+            args.add(String.valueOf(event.bytes()));
             args.add(String.valueOf(event.appId()));
         }
 

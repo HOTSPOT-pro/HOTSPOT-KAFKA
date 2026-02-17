@@ -63,12 +63,12 @@ public class UsageGenerator {
             long subId = Long.parseLong(subIdStr);
             long familyId = Long.parseLong(familyObj.toString());
 
-            int usageKb =
+            int bytes =
                     ThreadLocalRandom.current()
                             .nextInt(MIN_USAGE_KB, MAX_USAGE_KB + 1);
 
             events.add(
-                    UsageEvent.create(subId, familyId, usageKb)
+                    UsageEvent.create(subId, familyId, bytes)
             );
         }
 

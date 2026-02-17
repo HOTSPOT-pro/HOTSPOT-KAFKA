@@ -1,4 +1,4 @@
-package hotspot.worker.producer.kafka.producer;
+package hotspot.worker.common.config.kafka.producer;
 
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
