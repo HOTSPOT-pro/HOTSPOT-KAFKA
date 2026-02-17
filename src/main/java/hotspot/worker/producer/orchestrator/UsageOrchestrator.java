@@ -5,7 +5,7 @@ import java.util.Set;
 
 import org.springframework.stereotype.Component;
 
-import hotspot.worker.producer.kafka.producer.UsageKafkaProducer;
+import hotspot.worker.common.config.kafka.producer.UsageKafkaProducer;
 import hotspot.worker.producer.repository.UsageValidationRepository;
 import hotspot.worker.producer.schema.UsageEvent;
 import lombok.RequiredArgsConstructor;
