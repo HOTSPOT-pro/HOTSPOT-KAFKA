@@ -1,4 +1,4 @@
-package hotspot.worker.apps;
+package hotspot.seed;
 
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDateTime;
@@ -26,12 +26,12 @@ import org.springframework.util.StringUtils;
 public class SeedRunner {
     private static final int PIPELINE_BATCH_SIZE = 1000;
 
-    // 시드 전용 애플리케이션 진입점
+    // ?�드 ?�용 ?�플리�??�션 진입??
     public static void main(String[] args) {
         SpringApplication.run(SeedRunner.class, args);
     }
 
-    // Redis 초기화 후 전체 시드 작업을 순서대로 수행
+    // Redis 초기?????�체 ?�드 ?�업???�서?��??�행
     @Bean
     CommandLineRunner run(JdbcTemplate jdbc, StringRedisTemplate redis) {
         return ignored -> {
@@ -63,12 +63,12 @@ public class SeedRunner {
         };
     }
 
-    // Redis 저수준 API 호출용 UTF-8 바이트 변환
+    // Redis ?�?��? API ?�출??UTF-8 바이??변??
     private static byte[] b(String s) {
         return s.getBytes(StandardCharsets.UTF_8);
     }
 
-    // 패턴에 맞는 키를 조회해 일괄 삭제한다(운영 대용량 사용 주의)
+    // ?�턴??맞는 ?��? 조회???�괄 ??��?�다(?�영 ?�?�량 ?�용 주의)
     private static void deleteByPattern(StringRedisTemplate redis, String pattern) {
         var keys = redis.keys(pattern);
         if (keys != null && !keys.isEmpty()) {
@@ -76,7 +76,7 @@ public class SeedRunner {
         }
     }
 
-    // 구독-요금제 정보를 읽어 개인 한도(limit:sub:{subId})를 채움
+    // 구독-?�금???�보�??�어 개인 ?�도(limit:sub:{subId})�?채�?
     private void seedPlanLimit(JdbcTemplate jdbc, StringRedisTemplate redis) {
         String sql = """
             SELECT s.sub_id AS sub_id,
@@ -129,7 +129,7 @@ public class SeedRunner {
         });
     }
 
-    // 가족 정보를 읽어 가족 한도(limit:family:{familyId})를 채움
+    // 가�??�보�??�어 가�??�도(limit:family:{familyId})�?채�?
     private void seedFamilyLimit(JdbcTemplate jdbc, StringRedisTemplate redis) {
         String sql = """
             SELECT DISTINCT fs.family_id,
@@ -153,7 +153,7 @@ public class SeedRunner {
     private record FamilyLimitRow(long familyId, long familyLimitKb) {
     }
 
-    // 가족 구성원 인덱스/우선순위/개별 가족 한도 키를 생성
+    // 가�?구성???�덱???�선?�위/개별 가�??�도 ?��? ?�성
     private void seedFamilySubLimitPriorityAndIndexes(JdbcTemplate jdbc, StringRedisTemplate redis) {
         String sql = """
             SELECT family_id,
@@ -190,7 +190,7 @@ public class SeedRunner {
     private record FamilySubRow(long familyId, long subId, int priority, long dataLimitKb) {
     }
 
-    // 선물 데이터로 gift 한도/인덱스와 제공자 사용량을 적재
+    // ?�물 ?�이?�로 gift ?�도/?�덱?��? ?�공???�용?�을 ?�재
     private void seedPresentsAndDonorUsage(
         JdbcTemplate jdbc,
         StringRedisTemplate redis
@@ -268,7 +268,7 @@ public class SeedRunner {
         return appId;
     }
 
-    // 반복형 차단 정책(SCHEDULED)을 block:repeat에 적재
+    // 반복??차단 ?�책(SCHEDULED)??block:repeat???�재
     private void seedBlockRepeat(JdbcTemplate jdbc, StringRedisTemplate redis) {
         String sql = """
             SELECT ps.sub_id,
@@ -362,7 +362,7 @@ public class SeedRunner {
         };
     }
 
-    // 기간형 차단 정책(ONCE)을 block:time에 적재
+    // 기간??차단 ?�책(ONCE)??block:time???�재
     private void seedBlockTime(JdbcTemplate jdbc, StringRedisTemplate redis) {
         String sql = """
             SELECT ps.sub_id,
@@ -437,7 +437,7 @@ public class SeedRunner {
         }
     }
 
-    // 즉시 차단 정책(IMMEDIATE)을 block:immediate에 적재
+    // 즉시 차단 ?�책(IMMEDIATE)??block:immediate???�재
     private void seedBlockImmediate(JdbcTemplate jdbc, StringRedisTemplate redis) {
         String sql = """
             SELECT s.sub_id
@@ -453,7 +453,7 @@ public class SeedRunner {
         });
     }
 
-    // 앱 차단 목록을 block:app:{subId} 세트로 적재
+    // ??차단 목록??block:app:{subId} ?�트�??�재
     private void seedBlockApp(JdbcTemplate jdbc, StringRedisTemplate redis) {
         String sql = """
             SELECT bss.sub_id,
@@ -477,3 +477,4 @@ public class SeedRunner {
     private record BlockAppRow(long subId, String appId) {
     }
 }
+
