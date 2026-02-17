@@ -28,10 +28,10 @@ public class UsageValidationRepository {
 
     private static final ZoneId ZONE_ID = ZoneId.of("Asia/Seoul");
 
-    public Set<Long> validateAndCheck(List<UsageEvent> events) {
+    public Set<String> validateAndCheck(List<UsageEvent> events) {
 
         if (events.isEmpty()) {
-            return Collections.emptySet();
+            return Set.of();
         }
 
         ZonedDateTime now = ZonedDateTime.now(ZONE_ID);
@@ -39,14 +39,16 @@ public class UsageValidationRepository {
         List<String> args = new ArrayList<>();
 
         args.add(String.valueOf(now.toEpochSecond()));
-        args.add(events.get(0).appId());
-
         args.add(String.valueOf(now.getDayOfWeek().getValue()));
         args.add(now.format(HHMM_FORMATTER));
         args.add(now.format(YYYYMM_FORMATTER));
 
         for (UsageEvent event : events) {
+            args.add(event.eventId());
             args.add(String.valueOf(event.subId()));
+            args.add(String.valueOf(event.familyId()));
+            args.add(String.valueOf(event.dataUsage()));
+            args.add(String.valueOf(event.appId()));
         }
 
         List<?> result = redisTemplate.execute(
@@ -60,7 +62,7 @@ public class UsageValidationRepository {
         }
 
         return result.stream()
-                .map(o -> Long.parseLong(o.toString()))
+                .map(Object::toString)
                 .collect(Collectors.toSet());
     }
 }

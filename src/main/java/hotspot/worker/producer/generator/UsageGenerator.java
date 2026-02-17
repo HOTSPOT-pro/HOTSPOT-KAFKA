@@ -2,7 +2,6 @@ package hotspot.worker.producer.generator;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ThreadLocalRandom;
 
 import org.springframework.data.redis.core.RedisTemplate;
@@ -13,6 +12,7 @@ import hotspot.worker.producer.schema.UsageEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
+
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -22,9 +22,12 @@ public class UsageGenerator {
     private final RedisTemplate<String, String> redisTemplate;
 
     private static final String SUB_FAMILY_IDX_KEY = "idx:sub:family";
+    private static final String FAMILY_SUB_SET_KEY = "idx:family:subs";
+
     private static final int MIN_USAGE_KB = 50;
     private static final int MAX_USAGE_KB = 500;
     private static final int EVENT_SIZE = 1000;
+
 
     public void produceEvent() {
 
@@ -37,30 +40,28 @@ public class UsageGenerator {
 
     private List<UsageEvent> generateRandomEvents() {
 
-        Map<Object, Object> subFamilyMap =
-                redisTemplate.opsForHash().entries("SUB_FAMILY_IDX_KEY");
+        List<String> subIds =
+                redisTemplate.opsForSet()
+                        .randomMembers(FAMILY_SUB_SET_KEY, EVENT_SIZE);
 
-        if (subFamilyMap.isEmpty()) {
-            throw new IllegalStateException(SUB_FAMILY_IDX_KEY + " is empty");
+        if (subIds == null || subIds.isEmpty()) {
+            throw new IllegalStateException("No family subs found");
         }
 
-        List<String> subIds =
-                subFamilyMap.keySet().stream()
-                        .map(Object::toString)
-                        .toList();
+        List<UsageEvent> events = new ArrayList<>(subIds.size());
 
-        List<UsageEvent> events = new ArrayList<>(EVENT_SIZE);
+        for (String subIdStr : subIds) {
 
-        int total = subIds.size();
+            Object familyObj =
+                    redisTemplate.opsForHash()
+                            .get(SUB_FAMILY_IDX_KEY, subIdStr);
 
-        for (int i = 0; i < EVENT_SIZE; i++) {
-
-            String subIdStr = subIds.get(ThreadLocalRandom.current().nextInt(total));
-            String familyIdStr =
-                    subFamilyMap.get(subIdStr).toString();
+            if (familyObj == null) {
+                continue;
+            }
 
             long subId = Long.parseLong(subIdStr);
-            long familyId = Long.parseLong(familyIdStr);
+            long familyId = Long.parseLong(familyObj.toString());
 
             int usageKb =
                     ThreadLocalRandom.current()

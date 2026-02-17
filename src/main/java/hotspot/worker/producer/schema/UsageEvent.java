@@ -8,23 +8,23 @@ public record UsageEvent(
         String eventId,
         long subId,
         long familyId,
-        long usageKb,
-        String appId,
+        long dataUsage,
+        Long appId,
         LocalDateTime createdTime
 ) {
 
-    public static UsageEvent create(long subId, long familyId, int usageKb) {
+    public static UsageEvent create(long subId, long familyId, int dataUsage) {
         return new UsageEvent(
                 UUID.randomUUID().toString(),
                 subId,
                 familyId,
-                usageKb,
+                dataUsage,
                 randomApp(),
                 LocalDateTime.now(ZoneId.of("Asia/Seoul"))
         );
     }
 
-    public static String randomApp() {
-        return AppType.randomCode();
+    public static Long randomApp() {
+        return AppType.randomAppId();
     }
 }
