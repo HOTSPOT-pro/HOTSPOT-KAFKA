@@ -8,6 +8,7 @@ import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringDeserializer;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.boot.autoconfigure.kafka.KafkaProperties;
+import org.springframework.boot.ssl.SslBundles;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
@@ -50,8 +51,11 @@ public class KafkaConsumerConfig {
 
     // UsageEvent 역직렬화를 위한 ConsumerFactory
     @Bean
-    public ConsumerFactory<String, UsageEvent> consumerFactory(KafkaProperties props) {
-        Map<String, Object> cfg = new HashMap<>(props.buildConsumerProperties());
+    public ConsumerFactory<String, UsageEvent> consumerFactory(
+            KafkaProperties props,
+            SslBundles sslBundles
+    ) {
+        Map<String, Object> cfg = new HashMap<>(props.buildConsumerProperties(sslBundles));
         cfg.put(ConsumerConfig.KEY_DESERIALIZER_CLASS_CONFIG, StringDeserializer.class);
         cfg.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
 
@@ -64,8 +68,11 @@ public class KafkaConsumerConfig {
 
     // 알림 이벤트 발행용 ProducerFactory
     @Bean
-    public ProducerFactory<String, UsageAlertEvent> producerFactory(KafkaProperties props) {
-        Map<String, Object> cfg = new HashMap<>(props.buildProducerProperties());
+    public ProducerFactory<String, UsageAlertEvent> producerFactory(
+            KafkaProperties props,
+            SslBundles sslBundles
+    ) {
+        Map<String, Object> cfg = new HashMap<>(props.buildProducerProperties(sslBundles));
         cfg.put(ProducerConfig.KEY_SERIALIZER_CLASS_CONFIG, StringSerializer.class);
         cfg.put(ProducerConfig.VALUE_SERIALIZER_CLASS_CONFIG, JsonSerializer.class);
         cfg.put(JsonSerializer.ADD_TYPE_INFO_HEADERS, false);
