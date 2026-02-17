@@ -81,16 +81,16 @@ public class UsageEventHandler {
         }
     }
 
-    // 알림 대상에 따라 Kafka partition key를 만듦
+    // 알림 타입에 따라 Kafka partition key를 생성
     private String keyFor(UsageAlertEvent event) {
+        if ("GIFT_REMAINING".equals(event.alertType()) && event.giftId() != null) {
+            return "gift:" + event.giftId();
+        }
         if (event.subId() != null) {
             return "sub:" + event.subId();
         }
         if (event.familyId() != null) {
             return "family:" + event.familyId();
-        }
-        if (event.giftId() != null) {
-            return "gift:" + event.giftId();
         }
         return "unknown";
     }
