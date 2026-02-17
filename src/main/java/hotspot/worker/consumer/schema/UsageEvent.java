@@ -10,7 +10,7 @@ public record UsageEvent(
         long subId,
         long familyId,
         long bytes,
-        String appId,
+        Long appId,
         Instant occurredAt
 ) {
 }

@@ -51,7 +51,7 @@ public class UsageLuaExecutor {
 
         List<String> argv = List.of(
                 String.valueOf(ev.bytes()),
-                ev.appId(),
+                String.valueOf(ev.appId()),
                 keysPack.yyyymm(),
                 keysPack.giftLimitPrefix(),
                 keysPack.giftUsagePrefix(),
