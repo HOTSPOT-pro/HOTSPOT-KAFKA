@@ -1,14 +1,14 @@
-package hotspot.worker.consumer.service;
+package hotspot.worker.consumer.usage.service;
 
 import java.util.ArrayList;
 import java.util.List;
 
 import org.springframework.stereotype.Service;
 
-import hotspot.worker.consumer.domain.GiftFire;
-import hotspot.worker.consumer.domain.UsageLuaResult;
-import hotspot.worker.consumer.schema.UsageAlertEvent;
-import hotspot.worker.consumer.schema.UsageEvent;
+import hotspot.worker.consumer.usage.domain.GiftFire;
+import hotspot.worker.consumer.usage.domain.UsageLuaResult;
+import hotspot.worker.consumer.usage.schema.UsageAlertEvent;
+import hotspot.worker.consumer.usage.schema.UsageEvent;
 
 /**
  * 이벤트 1건 처리 유스케이스 서비스

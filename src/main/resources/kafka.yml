@@ -1,17 +1,19 @@
 spring:
   kafka:
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
 
     properties:
       security.protocol: PLAINTEXT
 
     producer:
-      key-serializer: org.apache.kafka.common.serialization.StringSerializer
-      value-serializer: org.apache.kafka.common.serialization.StringSerializer
       acks: all
-      retries: 3
-      linger-ms: 5
-      batch-size: 16384
+      retries: 10
+      properties:
+        enable.idempotence: true
+        max.in.flight.requests.per.connection: 5
+        delivery.timeout.ms: 120000
+        linger.ms: 5
+        batch.size: 32768
 
     consumer:
       group-id: ${KAFKA_CONSUMER_GROUP_ID:usage-consumer-group}
@@ -25,5 +27,9 @@ spring:
 
 app:
   topics:
-    usage-events: ${KAFKA_TOPIC_USAGE_EVENTS:usage-events}
-    usage-alert-events: ${KAFKA_TOPIC_USAGE_ALERT_EVENTS:usage-alert-events}
+    usage-events: usage-events
+    usage-alert-events: usage-alert-events
+
+  consumer-groups:
+    usage: usage-consumer-group
+    alert: usage-alert-consumer-group

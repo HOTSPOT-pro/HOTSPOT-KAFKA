@@ -1,10 +1,10 @@
-package hotspot.worker.consumer.service;
+package hotspot.worker.consumer.usage.service;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 
-import hotspot.worker.consumer.schema.UsageAlertEvent;
+import hotspot.worker.consumer.usage.schema.UsageAlertEvent;
 
 /**
  * 알림 이벤트를 Kafka로 발행하는 서비스

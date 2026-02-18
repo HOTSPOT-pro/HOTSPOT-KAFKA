@@ -1,5 +1,6 @@
 package hotspot.worker.common.config.kafka.producer;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
 
@@ -12,9 +13,10 @@ public class UsageKafkaProducer {
 
     private final KafkaTemplate<String, UsageEvent> kafkaTemplate;
 
-    private static final String TOPIC = "usage-events";
+    @Value("${app.topics.usage-events}")
+    private String topic;
 
     public void sendUsage(UsageEvent event) {
-        kafkaTemplate.send(TOPIC, event.eventId(), event);
+        kafkaTemplate.send(topic, event.eventId(), event);
     }
 }

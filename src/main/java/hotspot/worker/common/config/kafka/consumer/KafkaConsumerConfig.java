@@ -10,7 +10,8 @@ import org.springframework.kafka.listener.ContainerProperties;
 import org.springframework.kafka.listener.DefaultErrorHandler;
 import org.springframework.util.backoff.ExponentialBackOff;
 
-import hotspot.worker.consumer.schema.UsageEvent;
+import hotspot.worker.consumer.usage.schema.UsageAlertEvent;
+import hotspot.worker.consumer.usage.schema.UsageEvent;
 
 @Configuration
 public class KafkaConsumerConfig {
@@ -46,6 +47,33 @@ public class KafkaConsumerConfig {
         backOff.setMaxElapsedTime(60_000L);
 
         factory.setCommonErrorHandler(new DefaultErrorHandler(backOff));
+
+        return factory;
+    }
+
+    @Bean
+    public ConsumerFactory<String, UsageAlertEvent> alertConsumerFactory(
+            KafkaProperties props,
+            SslBundles sslBundles
+    ) {
+        return KafkaConsumerFactorySupport.createConsumerFactory(
+                props,
+                sslBundles,
+                UsageAlertEvent.class
+        );
+    }
+
+    @Bean
+    public ConcurrentKafkaListenerContainerFactory<String, UsageAlertEvent>
+    alertKafkaListenerContainerFactory(
+            ConsumerFactory<String, UsageAlertEvent> alertConsumerFactory
+    ) {
+        ConcurrentKafkaListenerContainerFactory<String, UsageAlertEvent> factory =
+                new ConcurrentKafkaListenerContainerFactory<>();
+
+        factory.setConsumerFactory(alertConsumerFactory);
+        factory.getContainerProperties()
+                .setAckMode(ContainerProperties.AckMode.MANUAL);
 
         return factory;
     }
