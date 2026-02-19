@@ -28,16 +28,12 @@ if eventType == 'ADD' then
 
 	if added == 1 then
 
-	-- sub ↔ family 매핑
 		redis.call('HSET', KEYS[3], subId, familyId)
 
-		-- family_limit 증가
 		redis.call('HINCRBY', KEYS[2], 'family_limit', LIMIT_PER_MEMBER)
 
-		-- 증가된 family_limit 조회
 		local newLimit = redis.call('HGET', KEYS[2], 'family_limit')
 
-		-- 개인별 가족 한도 저장
 		redis.call('HSET', KEYS[5], 'family_limit', newLimit)
 
 		-- PRIORITY 모드일 경우 자동 우선순위 추가
@@ -69,7 +65,6 @@ else
 
 		redis.call('DEL', KEYS[5])
 
-		-- 🔥 PRIORITY 재정렬 포함
 		if redis.call('EXISTS', KEYS[6]) == 1 then
 
 			local oldScore = redis.call('ZSCORE', KEYS[6], subId)
