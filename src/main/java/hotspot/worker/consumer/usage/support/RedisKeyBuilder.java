@@ -9,6 +9,8 @@ import java.util.List;
  */
 public final class RedisKeyBuilder {
 
+    private static final String OUTBOX_USAGE_ALERTS_STREAM_KEY = "outbox:usage-alerts:v1";
+
     private final ZoneId zone;
 
     public RedisKeyBuilder(ZoneId zone) {
@@ -21,7 +23,8 @@ public final class RedisKeyBuilder {
             String yyyymm,
             String giftLimitPrefix,
             String giftUsagePrefix,
-            String giftNotifyPrefix
+            String giftNotifyPrefix,
+            String outboxStreamKey
     ) {
     }
 
@@ -61,13 +64,21 @@ public final class RedisKeyBuilder {
                 notifyPlanMonKey,
                 notifyPlanDayKey,
                 notifyFamilyMonKey,
-                dedupKey
+                dedupKey,
+                OUTBOX_USAGE_ALERTS_STREAM_KEY
         );
 
         String giftLimitPrefix = "limit:gift:" + subId + ":";
         String giftUsagePrefix = "usage:gift:" + subId + ":";
         String giftNotifyPrefix = "notify:gift:" + subId + ":";
 
-        return new Keys(keys, yyyymm, giftLimitPrefix, giftUsagePrefix, giftNotifyPrefix);
+        return new Keys(
+                keys,
+                yyyymm,
+                giftLimitPrefix,
+                giftUsagePrefix,
+                giftNotifyPrefix,
+                OUTBOX_USAGE_ALERTS_STREAM_KEY
+        );
     }
 }
