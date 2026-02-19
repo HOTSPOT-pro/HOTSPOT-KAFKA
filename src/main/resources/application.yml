@@ -9,11 +9,17 @@ spring:
   application:
     name: backend
 
+  task:
+    scheduling:
+      pool:
+        size: 4
+
   profiles:
     default: local
 
   config:
     import:
+      - optional:file:.env[.properties]
       - classpath:postgres.yml
       - classpath:redis.yml
       - classpath:kafka.yml
