@@ -16,7 +16,7 @@ public class UsageScheduler {
     private final UsageGenerator usageGenerator;
 
     // 1초마다 실행
-    @Scheduled(fixedDelay = 1000)
+    @Scheduled(fixedRateString = "${app.usage.scheduler.fixed-rate-ms:1000}")
     public void generate() {
         usageGenerator.produceEvent();
     }
