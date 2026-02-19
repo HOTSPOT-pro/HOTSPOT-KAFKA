@@ -26,6 +26,7 @@ public class UsageLuaExecutor {
     private static final long TTL_DAY_SECONDS = 172_800L;
     private static final long TTL_NOTIFY_SECONDS = 2_678_400L;
     private static final long TTL_DEDUP_SECONDS = 86_400L;
+    private static final long OUTBOX_STREAM_MAXLEN_APPROX = 200_000L;
 
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<List> usageAtomicScript;
@@ -44,7 +45,6 @@ public class UsageLuaExecutor {
         this.om = om;
     }
 
-    // 이벤트 1건을 Lua로 원자 처리하고 결과 DTO로 변환
     public UsageLuaResult execute(UsageEvent ev) {
         RedisKeyBuilder.Keys keysPack =
                 keyBuilder.build(ev.subId(), ev.familyId(), ev.eventId(), ev.occurredAt());
@@ -59,7 +59,12 @@ public class UsageLuaExecutor {
                 String.valueOf(TTL_MON_SECONDS),
                 String.valueOf(TTL_DAY_SECONDS),
                 String.valueOf(TTL_NOTIFY_SECONDS),
-                String.valueOf(TTL_DEDUP_SECONDS)
+                String.valueOf(TTL_DEDUP_SECONDS),
+                ev.eventId(),
+                ev.occurredAt().toString(),
+                String.valueOf(ev.subId()),
+                String.valueOf(ev.familyId()),
+                String.valueOf(OUTBOX_STREAM_MAXLEN_APPROX)
         );
 
         Object[] argvArray = argv.toArray(new Object[0]);
@@ -67,6 +72,7 @@ public class UsageLuaExecutor {
         @SuppressWarnings("unchecked")
         List<Object> arr = (List<Object>) raw;
 
+        // dedup 키가 이미 존재하면 DUP 상태로 반환됨
         if (arr.size() == 1 && "DUP".equals(toStr(arr.get(0)))) {
             return new UsageLuaResult(
                     true,
