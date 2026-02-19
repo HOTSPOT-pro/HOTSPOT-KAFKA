@@ -38,7 +38,7 @@ public class OutboxAlertPublisher {
 
     private static final String FIELD_ATTEMPTS = "attempts";
     private static final String FIELD_LAST_ERROR = "last_error";
-    private static final String FIELD_LAST_FAILED_AT = "last_failed_at";
+    private static final String FIELD_LAST_FAILED_TIME = "last_failed_time";
     private static final String FIELD_STREAM_ID = "stream_id";
     private static final String FIELD_ERROR = "error";
 
@@ -186,7 +186,7 @@ public class OutboxAlertPublisher {
 
         Long attempts = redis.opsForHash().increment(metaKey, FIELD_ATTEMPTS, 1L);
         redis.opsForHash().put(metaKey, FIELD_LAST_ERROR, safeErrorMessage(e));
-        redis.opsForHash().put(metaKey, FIELD_LAST_FAILED_AT, Instant.now().toString());
+        redis.opsForHash().put(metaKey, FIELD_LAST_FAILED_TIME, Instant.now().toString());
         redis.expire(metaKey, Duration.ofSeconds(metaTtlSeconds));
 
         long attemptsValue = attempts == null ? 0L : attempts;
@@ -206,7 +206,7 @@ public class OutboxAlertPublisher {
         dlqEntry.put(FIELD_STREAM_ID, record.getId().getValue());
         dlqEntry.put(FIELD_ATTEMPTS, String.valueOf(attempts));
         dlqEntry.put(FIELD_ERROR, safeErrorMessage(e));
-        dlqEntry.put(FIELD_LAST_FAILED_AT, Instant.now().toString());
+        dlqEntry.put(FIELD_LAST_FAILED_TIME, Instant.now().toString());
 
         redis.opsForStream().add(dlqStreamKey, dlqEntry);
     }

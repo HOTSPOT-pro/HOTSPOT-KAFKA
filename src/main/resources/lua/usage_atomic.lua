@@ -134,12 +134,12 @@ local function add_outbox(alertType, targetKey, kafkaKey, thresholdValue, remain
     '*',
     'alert_id', alertId,
     'event_id', eventId,
-    'occurred_at', occurredAt,
+    'occurred_time', occurredAt,
     'alert_type', alertType,
     'target_key', targetKey,
     'kafka_key', kafkaKey,
     'payload', cjson.encode(payload),
-    'created_at', createdAt
+    'created_time', createdAt
   )
 end
 
