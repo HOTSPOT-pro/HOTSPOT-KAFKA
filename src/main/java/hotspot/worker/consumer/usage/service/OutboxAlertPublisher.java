@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 import jakarta.annotation.PostConstruct;
 
@@ -68,7 +67,7 @@ public class OutboxAlertPublisher {
             @Value("${app.outbox.usage-alerts.dlq-stream-key:outbox:usage-alerts:dlq:v1}") String dlqStreamKey,
             @Value("${app.outbox.usage-alerts.meta-key-prefix:outbox:meta:usage-alerts:v1:}") String metaKeyPrefix,
             @Value("${app.outbox.usage-alerts.group:usage-alerts-pub-g1}") String group,
-            @Value("${app.outbox.usage-alerts.consumer-name:}") String configuredConsumerName,
+            @Value("${app.outbox.usage-alerts.consumer-name}") String configuredConsumerName,
             @Value("${app.outbox.usage-alerts.read-count:100}") long readCount,
             @Value("${app.outbox.usage-alerts.block-ms:2000}") long blockMs,
             @Value("${app.outbox.usage-alerts.max-attempts:20}") int maxAttempts,
@@ -84,9 +83,7 @@ public class OutboxAlertPublisher {
         this.dlqStreamKey = dlqStreamKey;
         this.metaKeyPrefix = metaKeyPrefix;
         this.group = group;
-        this.consumerName = configuredConsumerName == null || configuredConsumerName.isBlank()
-                ? buildConsumerName()
-                : configuredConsumerName;
+        this.consumerName = configuredConsumerName;
         this.readCount = readCount;
         this.blockMs = blockMs;
         this.maxAttempts = maxAttempts;
@@ -285,11 +282,4 @@ public class OutboxAlertPublisher {
         return false;
     }
 
-    private String buildConsumerName() {
-        String host = System.getenv("HOSTNAME");
-        if (host == null || host.isBlank()) {
-            host = "worker";
-        }
-        return host + ":" + UUID.randomUUID();
-    }
 }
