@@ -32,7 +32,7 @@ services:
     image: bitnamilegacy/kafka:latest
     container_name: local-kafka
     ports:
-      - "9094:9094"   # 호스트(내 PC)에서 접속할 포트
+      - "9092:9094"   # 호스트(내 PC)에서 접속할 포트
     environment:
       # KRaft 모드
       - KAFKA_CFG_NODE_ID=0
