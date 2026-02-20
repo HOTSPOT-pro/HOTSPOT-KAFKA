@@ -9,6 +9,41 @@
 ---
 </br>
 
+## 📝 Overview
+**HotSpot Worker**는 Kafka 기반 **실시간 사용량 이벤트 파이프라인**을 구성하며,  
+Producer 단계에서 Redis Lua로 정책/한도 시뮬레이션을 수행해 **불필요한 이벤트를 사전 차단**하고,  
+Consumer 단계에서는 **사용량 반영 + 임계치 계산 + 알림 Outbox 적재를 단일 원자 연산으로 처리**해 정합성을 보장합니다.  
+또한 **PostgreSQL(SoT)과 Redis(실시간 상태 레이어) 간의 불일치를 최소화**하기 위해 CDC (Debezium)+Outbox로 상태 동기화를 수행하며,  
+고도화 단계에서는 **RDB를 진실의 근원으로 두고 Redis를 연산/조회 레이어로 분리** (Dual-write / Reconcile / Fallback)하는 아키텍처로 확장합니다.
+
+</br>
+
+## 📌 목차
+[🚀 HotSpot Worker: 사용량 이벤트 발행 (Producer)](#producer)
+  - [🗺️ 개요](#producer-overview)
+  - [🔎 데이터 흐름](#producer-flow)
+
+[🚚 HotSpot Worker: 사용량 집계 & 알림 파이프라인](#pipeline)
+  - [🗺️ 개요](#pipeline-overview)
+  - [🔎 데이터 흐름](#pipeline-flow)
+
+[🔄 RDB ↔ Redis 정합성 보장: CDC (Debezium + Outbox)](#cdc)
+  - [🗺️ 개요](#cdc-overview)
+  - [🔎 동작 흐름](#cdc-flow)
+
+[🔁 Redis-only의 한계와 RDB 기반 정합성 아키텍처 전환](#evolution)
+  - [⚠️ Redis-only의 구조적 한계](#evolution-limit)
+  - [🎯 목표](#evolution-goal)
+  - [🔎 데이터 흐름](#evolution-path)
+
+
+
+</br>
+
+---
+</br>
+
+<a id="producer"></a>
 ## 🚀 HotSpot Worker: 사용량 이벤트 발행 (Producer)
 
 실시간 사용량 집계 파이프라인은 **usage-events가 Kafka에 적재되는 시점**부터 시작됩니다.
@@ -17,6 +52,7 @@
 
 </br>
 
+<a id="producer-overview"></a>
 ## 🗺️ 개요
 
 ### 1) 문제
@@ -60,6 +96,7 @@ Consumer에서는 usage_atomic.lua를 통해
 
 </br>
 
+<a id="producer-flow"></a>
 ## 🔎 데이터 흐름: Scheduler → Redis Lua 검증 → Kafka usage-events 발행
 ```mermaid
 sequenceDiagram
@@ -130,7 +167,7 @@ Redis Lua Script를 활용하여 "이 사용자가 현재 데이터를 쓸 수 �
 
 </br>
 
-
+<a id="pipeline"></a>
 ## 🚚 HotSpot Worker: 사용량 집계 & 알림 파이프라인
 
 Spring Boot + Kafka + Redis + PostgreSQL 기반의 **실시간 데이터 사용량 집계 및 임계치 알림 파이프라인**입니다.  
@@ -139,6 +176,7 @@ Spring Boot + Kafka + Redis + PostgreSQL 기반의 **실시간 데이터 사용�
 
 </br>
 
+<a id="pipeline-overview"></a>
 ## 🗺️ 개요
 
 ### 1) 문제
@@ -163,6 +201,7 @@ Spring Boot + Kafka + Redis + PostgreSQL 기반의 **실시간 데이터 사용�
 --- 
 </br>
 
+<a id="pipeline-flow"></a>
 ## 🔎 데이터 흐름: usage-events → Redis Lua → Outbox → Kafka → Notification DB
 
 ```mermaid
@@ -266,7 +305,8 @@ Kafka에서 받은 이벤트를 Lua로 전달해 다음을 한 번에 처리합�
 
 </br>
 
-## 🔄 RDB ↔ Redis 정합성 보장: CDC(Debezium + Outbox)
+<a id="cdc"></a>
+## 🔄 RDB ↔ Redis 정합성 보장: CDC (Debezium + Outbox)
 HotSpot은 PostgreSQL을 Source of Truth(SoT) 로 사용하고,
 Redis는 정책/한도 판단을 위한 실시간 상태 레이어로 사용합니다.
 
@@ -274,6 +314,7 @@ Redis는 정책/한도 판단을 위한 실시간 상태 레이어로 사용합�
 
 </br>
 
+<a id="cdc-overview"></a>
 ## 🗺️ 개요
 
 ### 1) 문제
@@ -333,6 +374,7 @@ DB UPDATE → Kafka 발행 → Consumer → Redis 반영
 
 </br>
 
+<a id="cdc-flow"></a>
 ## 🔎 동작 흐름
 
 ### 예시 1 — 회선 데이터 사용 즉시 차단 상황
@@ -417,6 +459,7 @@ sequenceDiagram
 
 </br>
 
+<a id="evolution"></a>
 ## 🔁 Redis-only의 한계와 RDB 기반 정합성 아키텍처 전환 (고도화 단계 진행 예정)
 
 1차 MVP에서는 **Redis 단독**으로 사용량 반영/정책 판정/알림 Outbox까지 처리해 기능을 완성했습니다.  
@@ -424,21 +467,23 @@ sequenceDiagram
 
 </br>
 
-### ⚠️ Redis-only의 구조적 한계
+<a id="evolution-limit"></a>
+## ⚠️ Redis-only의 구조적 한계
 
-#### 1) 안정성(내구성) 리스크
+### 1) 안정성(내구성) 리스크
 - Redis 장애/재시작/데이터 유실 시  
   **사용량 상태 자체가 사라질 수 있음**
 - Outbox/중복 방지/임계치 상태도 Redis에만 있으면  
   장애가 곧 **알림 누락/중복**으로 이어질 수 있음
 
-#### 2) 정합성(Consistency) 리스크
+### 2) 정합성(Consistency) 리스크
 - 이벤트 재처리, 동시성 경합, 운영 중 키 손상/부분 유실 등의 이유로  
   Redis 상태가 정답이라는 보장을 유지하기 어려움
 - Redis는 빠르지만 **감사·정산·장기 보관**의 근본 저장소로는 부적합
 
 </br>
 
+<a id="evolution-goal"></a>
 ## 🎯 목표: RDB를 진실의 근원으로, Redis는 빠른 연산/조회 레이어로
 
 PostgreSQL을 **SoT(Source of Truth)** 로 두고,
@@ -456,6 +501,7 @@ Redis는 다음 역할에 집중합니다.
 
 </br>
 
+<a id="evolution-path"></a>
 ## 🔎 데이터 흐름: Write Path / Read Path / Reconcile Path
 
 ### 1) Write Path (실시간 처리)
@@ -567,6 +613,3 @@ Redis와 RDB 사이의 불일치를 제거하기 위해 **주기적으로 RDB �
 **설계 의도**  
 - Redis는 빠르지만 진실은 아니다.  
 - drift는 발생한다는 전제를 두고, drift를 **주기적으로 제거**한다.
-
----
-</br>
