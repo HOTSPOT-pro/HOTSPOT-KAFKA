@@ -308,7 +308,7 @@ sequenceDiagram
   participant DZ as Debezium
   participant K as Kafka (family-events)
   participant FC as family-consumer
-  participant R as Redis
+  participant R as Redis (Lua)
 
   U->>API: 가족 구성원 추가 요청
   API->>PG: BEGIN
@@ -321,17 +321,16 @@ sequenceDiagram
   DZ->>K: publish (key=familyId)
 
   K->>FC: 메시지 소비
+  FC->>R: EVAL family_member_update.lua (ADD)
 
-  FC->>R: HINCRBY limit:family:{familyId}
-  Note right of R: 가족 전체 공유 데이터 한도 증가 (family_limit 갱신)
+  Note right of R: 1) SADD idx:family:subs:{familyId} {subId}
+  Note right of R: 2) HSET idx:sub:family {subId} {familyId}
+  Note right of R: 3) HINCRBY limit:family:{familyId} family_limit
+  Note right of R: 4) HSET limit:family_sub:{familyId}:{subId}
 
-  FC->>R: HSET idx:sub:family {subId} {familyId}
-  Note right of R: 구성원이 어떤 가족에 속하는지 역참조 인덱스 생성
+  Note right of R: 5) PRIORITY 모드일 경우\nZADD priority:family:{familyId}\n(우선순위 자동 정렬)
 
-  FC->>R: SADD idx:family:subs:{familyId} {subId}
-  Note right of R: 가족에 속한 구성원 목록 추가 (가족 단위 조회용)
-
-  Note over R: Redis 가족 상태 동기화 완료
+  Note over R: Redis 가족 상태 + 우선순위 구조 동기화 완료
 ```
 
 ### ⚠️ Redis-only의 구조적 한계
