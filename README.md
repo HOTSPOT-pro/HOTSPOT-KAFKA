@@ -316,7 +316,7 @@ DB UPDATE → Kafka 발행 → Consumer → Redis 반영
 
 </br>
 
-**3. User Server가 Redis를 직접 업데이트**
+**3. CDC(Debezium) + Outbox 패턴**</br>
 **위의 두 가지 방식에서 나온 한계점들을 통합적으로 해결하기 위해 저희는 최종적으로 CDC(Debezium) + Outbox 패턴을 도입했습니다**
 
 **핵심 전략**
