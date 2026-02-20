@@ -450,7 +450,6 @@ Redis는 다음 역할에 집중합니다.
 2. **Reconciliation(정합성 맞춤)**: RDB를 기준으로 Redis를 주기적으로 덮어씀 
 3. **Read Fallback**: Redis miss 시 RDB로 조회 후 캐시 워밍
 
----
 </br>
 
 ## 🔎 데이터 흐름: Write Path / Read Path / Reconcile Path
