@@ -7,7 +7,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 import hotspot.seed.SeedRunner;
 
-//@EnableScheduling
+@EnableScheduling
 @SpringBootApplication
 public class WorkerApplication {
 
