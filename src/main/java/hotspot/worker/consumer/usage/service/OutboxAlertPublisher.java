@@ -189,12 +189,14 @@ public class OutboxAlertPublisher {
             return;
         }
 
+        boolean acquired = false;
         try {
             UsageAlertEvent event = om.readValue(payload, UsageAlertEvent.class);
             // permit 획득에 실패하면 ACK 없이 두어 다음 주기에서 재처리한다.
             if (!inFlight.tryAcquire()) {
                 return;
             }
+            acquired = true;
 
             // 스케줄러 스레드를 막지 않도록 콜백에서 후처리를 수행한다.
             kafka.send(topic, kafkaKey, event).whenCompleteAsync((result, ex) -> {
@@ -211,8 +213,13 @@ public class OutboxAlertPublisher {
                     inFlight.release();
                 }
             }, callbackExecutor);
+            acquired = false;
         } catch (Exception e) {
             handleFailure(record, e);
+        } finally {
+            if (acquired) {
+                inFlight.release();
+            }
         }
     }
 
