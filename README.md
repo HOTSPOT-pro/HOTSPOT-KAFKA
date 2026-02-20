@@ -271,82 +271,40 @@ Kafka에서 받은 이벤트를 Lua로 전달해 다음을 한 번에 처리합�
 ```mermaid
 sequenceDiagram
   autonumber
-  %% ===== Participants =====
   participant U as User / Admin
-  participant API as API Server (Spring)
+  participant API as API Server
   participant PG as PostgreSQL (SoT)
-  participant OB as outbox_event (table)
-  participant WAL as WAL / Logical Replication
-  participant DZ as Debezium (Postgres Connector)
-  participant KC as Kafka Connect (Worker)
-  participant K as Kafka Cluster
-  participant ST as Kafka Topic: subscription-events
-  participant FT as Kafka Topic: family-events
+  participant OB as outbox_event
+  participant DZ as Debezium
+  participant K as Kafka
+  participant ST as subscription-events
+  participant FT as family-events
   participant SC as subscription-consumer
   participant FC as family-consumer
-  participant R as Redis (Realtime State)
+  participant R as Redis
 
-  %% ===== 0. Business Action =====
-  U->>API: 정책 변경/요금제 변경/가족 구성 변경/선물 수신 등 요청
-  note over U,API: "정책/한도는 Redis에도 반영되어야 함"\n하지만 SoT는 PostgreSQL
-
-  %% ===== 1. Transaction (SoT Update + Outbox Insert) =====
+  %% 1. Business Transaction
+  U->>API: 정책/요금제/가족 변경 요청
   API->>PG: BEGIN
-  note over API,PG: 하나의 트랜잭션 안에서\n(1) 실제 테이블 변경\n(2) outbox_event INSERT
-
-  alt 예: 즉시 차단 (SUBSCRIPTION_LOCKED)
-    API->>PG: UPDATE subscription SET is_locked=true WHERE sub_id=10023
-    API->>OB: INSERT outbox_event(type=SUBSCRIPTION_LOCKED,\naggregate_type=SUBSCRIPTION,\naggregate_id=10023,\npayload={...})
-  else 예: 요금제 변경 (PLAN_CHANGED)
-    API->>PG: UPDATE subscription SET plan_id=... WHERE sub_id=10023
-    API->>OB: INSERT outbox_event(type=PLAN_CHANGED,\naggregate_type=SUBSCRIPTION,\naggregate_id=10023,\npayload={subId,limit,...})
-  else 예: 가족 구성원 추가 (FAMILY_MEMBER_ADDED)
-    API->>PG: INSERT family_member(family_id=500, sub_id=20001)
-    API->>PG: UPDATE family SET family_limit = family_limit + 5GB WHERE family_id=500
-    API->>OB: INSERT outbox_event(type=FAMILY_MEMBER_ADDED,\naggregate_type=FAMILY,\naggregate_id=500,\npayload={familyId,subId,addedLimit...})
-  else 예: 선물 수신 (GIFT_RECEIVED)
-    API->>PG: INSERT gift_history(...) / UPDATE ... (필요한 SoT 반영)
-    API->>OB: INSERT outbox_event(type=GIFT_RECEIVED,\naggregate_type=SUBSCRIPTION,\naggregate_id=receiverSubId,\npayload={giverSubId,receiverSubId,giftId,limit,yyyyMM,yyyyMMDD...})
-  end
-
+  API->>PG: 실제 테이블 UPDATE/INSERT
+  API->>OB: outbox_event INSERT
   API->>PG: COMMIT
-  note over PG,OB: Commit 성공 시 outbox_event row 확정\n(실패/롤백이면 outbox도 생성되지 않음)
 
-  %% ===== 2. CDC (WAL -> Debezium) =====
-  OB-->>WAL: outbox_event INSERT가 WAL에 기록됨 (logical)
-  note over WAL: wal_level=logical\npublication/slot 기반
+  %% 2. CDC
+  PG-->>DZ: WAL(Logical Replication)
+  DZ->>K: outbox_event 변경 감지 후 Kafka 발행
 
-  WAL-->>DZ: Debezium이 replication slot으로 WAL 읽기
-  note over DZ:  커밋된 트랜잭션만 읽음\n 트랜잭션 순서 보장\n slot 기반으로 유실 방지\n 재시작 후 이어서 읽음
-
-  %% ===== 3. Debezium Outbox Transform -> Kafka Topics =====
-  DZ->>KC: (Kafka Connect task) change event 처리
-  note over KC: SMT(EventRouter) 적용\nroute.by.field=aggregatetype\nroute.topic.replacement=${routedByValue}-events
-
-  KC->>K: Produce (routed topic)
-  alt aggregate_type == SUBSCRIPTION
-    K->>ST: publish to subscription-events\nkey = aggregate_id(subId)\nvalue = payload(+type,eventId 등)
-  else aggregate_type == FAMILY
-    K->>FT: publish to family-events\nkey = aggregate_id(familyId)\nvalue = payload(+type,eventId 등)
-  end
-  note over K,ST: Topic 전략\nsubscription-events: subId 기준 ordering 기대
-  note over K,FT: Topic 전략\nfamily-events: familyId 기준 ordering 기대
-
-  %% ===== 4. Consumers (Redis Consistency Update) =====
-  par Subscription stream
-    ST-->>SC: poll message (group: subscription-consumer)
-    note over SC: type 기반으로 handler 분기\n(Locked/PlanChanged/Gift/Policy...)
-    SC->>R: Redis 반영 (idempotent + atomic if needed)
-    note over R: 예)\nSET block:immediate:{subId}\nHSET limit:sub:{subId}\nHSET/ZADD gift bucket + idx\nSADD/HSET/ZSET policy keys
-  and Family stream
-    FT-->>FC: poll message (group: family-consumer)
-    note over FC: type 기반 handler 분기\n(MemberAdd/Remove/Limit/SubLimit/Mode/Priority...)
-    FC->>R: Redis 반영 (다중 key 동시 업데이트)
-    note over R: 예)\nHINCRBY limit:family:{familyId}\nHSET idx:sub:family {subId}->{familyId}\nSADD idx:family:subs:{familyId}\nZADD priority:family:{familyId}
+  alt aggregate_type = SUBSCRIPTION
+    K->>ST: publish (key=subId)
+    ST->>SC: consume
+    SC->>R: Redis 정책/한도 동기화
+  else aggregate_type = FAMILY
+    K->>FT: publish (key=familyId)
+    FT->>FC: consume
+    FC->>R: Redis 가족 상태 동기화
   end
 
-  %% ===== 5. Result =====
-  note over R: Redis 상태가 PostgreSQL SoT와 동기화됨\n API는 DB만 커밋하면 되고,\n이벤트 발행/재시도/유실 방지는 Debezium이 담당
+  note over R: Redis 상태가 PostgreSQL과 정합성 유지
 ```
 
 ### ⚠️ Redis-only의 구조적 한계
