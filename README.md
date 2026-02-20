@@ -323,24 +323,15 @@ sequenceDiagram
   K->>FC: 메시지 소비
 
   FC->>R: HINCRBY limit:family:{familyId}
-  note right of R
-    가족 전체 공유 데이터 한도 증가
-    (family_limit 갱신)
-  end note
+  Note right of R: 가족 전체 공유 데이터 한도 증가 (family_limit 갱신)
 
   FC->>R: HSET idx:sub:family {subId} {familyId}
-  note right of R
-    구성원이 어떤 가족에 속하는지
-    역참조 인덱스 생성
-  end note
+  Note right of R: 구성원이 어떤 가족에 속하는지 역참조 인덱스 생성
 
   FC->>R: SADD idx:family:subs:{familyId} {subId}
-  note right of R
-    가족에 속한 구성원 목록 추가
-    (가족 단위 조회용)
-  end note
+  Note right of R: 가족에 속한 구성원 목록 추가 (가족 단위 조회용)
 
-  note over R: Redis 가족 상태 동기화 완료
+  Note over R: Redis 가족 상태 동기화 완료
 ```
 
 ### ⚠️ Redis-only의 구조적 한계
