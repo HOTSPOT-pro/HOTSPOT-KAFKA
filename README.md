@@ -268,43 +268,64 @@ Kafka에서 받은 이벤트를 Lua로 전달해 다음을 한 번에 처리합�
 ---
 </br>
 
+## 🔎 예시 1 — Subscription 즉시 차단 흐름 (SUBSCRIPTION_LOCKED)
+
 ```mermaid
 sequenceDiagram
   autonumber
-  participant U as User / Admin
+  participant U as User
   participant API as API Server
-  participant PG as PostgreSQL (SoT)
+  participant PG as PostgreSQL
   participant OB as outbox_event
   participant DZ as Debezium
-  participant K as Kafka
-  participant ST as subscription-events
-  participant FT as family-events
+  participant K as Kafka (subscription-events)
   participant SC as subscription-consumer
+  participant R as Redis
+
+  U->>API: "즉시 차단" 요청
+  API->>PG: BEGIN
+  API->>PG: UPDATE subscription SET is_locked=true
+  API->>OB: INSERT outbox_event (SUBSCRIPTION_LOCKED)
+  API->>PG: COMMIT
+
+  PG-->>DZ: WAL 변경 감지
+  DZ->>K: publish (key=subId)
+
+  K->>SC: 메시지 소비
+  SC->>R: SET block:immediate:{subId} 1
+
+  note over R: Redis 정책 상태 동기화 완료
+```
+
+## 🔎 예시 2 — Family 구성원 추가 흐름 (FAMILY_MEMBER_ADDED)
+```mermaid
+sequenceDiagram
+  autonumber
+  participant U as User
+  participant API as API Server
+  participant PG as PostgreSQL
+  participant OB as outbox_event
+  participant DZ as Debezium
+  participant K as Kafka (family-events)
   participant FC as family-consumer
   participant R as Redis
 
-  %% 1. Business Transaction
-  U->>API: 정책/요금제/가족 변경 요청
+  U->>API: 가족 구성원 추가 요청
   API->>PG: BEGIN
-  API->>PG: 실제 테이블 UPDATE/INSERT
-  API->>OB: outbox_event INSERT
+  API->>PG: INSERT family_member
+  API->>PG: UPDATE family_limit 증가
+  API->>OB: INSERT outbox_event (FAMILY_MEMBER_ADDED)
   API->>PG: COMMIT
 
-  %% 2. CDC
-  PG-->>DZ: WAL(Logical Replication)
-  DZ->>K: outbox_event 변경 감지 후 Kafka 발행
+  PG-->>DZ: WAL 변경 감지
+  DZ->>K: publish (key=familyId)
 
-  alt aggregate_type = SUBSCRIPTION
-    K->>ST: publish (key=subId)
-    ST->>SC: consume
-    SC->>R: Redis 정책/한도 동기화
-  else aggregate_type = FAMILY
-    K->>FT: publish (key=familyId)
-    FT->>FC: consume
-    FC->>R: Redis 가족 상태 동기화
-  end
+  K->>FC: 메시지 소비
+  FC->>R: HINCRBY limit:family:{familyId}
+  FC->>R: HSET idx:sub:family {subId}
+  FC->>R: SADD idx:family:subs:{familyId}
 
-  note over R: Redis 상태가 PostgreSQL과 정합성 유지
+  note over R: Redis 가족 상태 동기화 완료
 ```
 
 ### ⚠️ Redis-only의 구조적 한계
