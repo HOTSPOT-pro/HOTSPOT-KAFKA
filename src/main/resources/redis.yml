@@ -3,6 +3,7 @@ spring:
     redis:
       host: ${REDIS_HOST:localhost}
       port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD}
       timeout: 30s
       lettuce:
         shutdown-timeout: 100ms
