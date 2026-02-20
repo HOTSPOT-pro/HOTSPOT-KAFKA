@@ -4,6 +4,8 @@
 </p>
 <p align="center"><b>가족 데이터 공유 + 사용 제어, 흩어진 기능을 하나의 통합 서비스로</b></p>
 
+</br>
+
 ---
 </br>
 
@@ -37,7 +39,7 @@
 ### 2) 해결
 HotSpot은 이를 다음과 같이 설계했습니다.
 
-**1차 방어: Producer 단계 정책/한도 검증**
+**(1) 1차 방어: Producer 단계 정책/한도 검증**
 - Redis Lua로 정책/차단/한도 시뮬레이션 수행
 - 사용 불가 이벤트는 Kafka에 적재하지 않음
 - 불필요한 이벤트를 사전에 차단하여 스트림 정제
@@ -46,12 +48,12 @@ HotSpot은 이를 다음과 같이 설계했습니다.
 Producer는 **정책 게이트 역할**을 수행합니다.
 
 
-**2차 방어: Consumer 단계 원자적 재검증**
-Consumer에서는 usage_atomic.lua를 통해:
-	•	dedup 체크
-	•	실제 사용량 반영
-	•	임계치 계산
-	•	알림 Outbox 적재
+**(2) 2차 방어: Consumer 단계 원자적 재검증**
+Consumer에서는 usage_atomic.lua를 통해
+- dedup 체크
+- 실제 사용량 반영
+- 임계치 계산
+- 알림 Outbox 적재
 
 이 모든 과정을 **Redis Lua 원자 연산**으로 처리하여 
 **정책/한도 변경이 Producer 이후 발생하더라도 Consumer에서 실제 반영 시점의 최신 상태 기준으로 처리**
@@ -155,6 +157,8 @@ Spring Boot + Kafka + Redis + PostgreSQL 기반의 **실시간 데이터 사용�
 - `OutboxAlertPublisher`가 Outbox를 **Redis Stream consumer group**으로 읽어 **Kafka `usage-alert-events`** 발행
 - 발행 성공 시 `XACK`, 실패 시 attempts 메타 증가 → `maxAttempts` 초과 시 **DLQ**로 격리
 - 알림 컨슈머가 `usage-alert-events`를 소비하여 **Notification DB(PostgreSQL)** 적재
+
+</br>
 
 --- 
 </br>
