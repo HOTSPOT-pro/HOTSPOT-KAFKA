@@ -256,20 +256,74 @@ Kafka에서 받은 이벤트를 Lua로 전달해 다음을 한 번에 처리합�
 #### Step 3. Notification Consumer가 DB에 적재
 - `usage-alert-events`를 소비하여 Notification DB(PostgreSQL)에 적재합니다.
 - 최소 1회 전달 구조이므로, DB는 `event_id`/`alert_id` 기준 UNIQUE 또는 UPSERT로 **멱등 삽입**을 보장해야 합니다.
+</br>
 
 --- 
+
 </br>
 
-## 🔁 Redis-only의 한계와 RDB 기반 정합성 아키텍처 전환
+## 🔄 RDB ↔ Redis 정합성 보장: CDC(Debezium + Outbox)
+HotSpot은 PostgreSQL을 Source of Truth(SoT) 로 사용하고,
+Redis는 정책/한도 판단을 위한 실시간 상태 레이어로 사용합니다.
 
-1차 MVP에서는 **Redis 단독**으로 사용량 반영/정책 판정/알림 Outbox까지 처리해 기능을 완성했습니다.  
-다만 Redis-only 구조는 운영 단계에서 아래 2가지 리스크가 본질적으로 남습니다.
+따라서 두 저장소의 상태는 항상 동일해야 합니다.
 
----
-</br>
+## 🗺️ 개요
 
-## 🔎 예시 1 — Subscription 즉시 차단 흐름 (SUBSCRIPTION_LOCKED)
+### 1) 문제
+HotSpot에서 다음과 같은 변경은 모두 PostgreSQL에서 발생합니다.
+- 즉시 차단 / 정책 적용
+- 요금제 변경
+- 가족 구성원 추가/삭제
+- 선물 데이터 지급
 
+이 변경은 **Postgres DB(Source DB)에 반영된 순간 Redis(Target DB)에도 즉시 반영**되어야 합니다.
+
+우리는 이를 해결하기 위해 3가지 방식을 검토했습니다.
+
+1. User Server가 Redis를 직접 업데이트
+
+```
+DB UPDATE → Redis UPDATE
+```
+
+**한계**
+- DB 성공 후 Redis 실패 가능 → 정합성 깨짐
+- Redis 성공 후 DB 롤백 가능 → 잘못된 상태 유지
+- 여러 Redis Key 동시 수정 시 부분 성공 위험
+- 장애 복구 로직 복잡
+
+> RDB와 Redis 사이의 원자성을 보장할 수 없음
+
+2. User Server가 Kafka 이벤트를 직접 발행
+
+```
+DB UPDATE → Kafka 발행 → Consumer → Redis 반영
+```
+
+**한계**
+- DB는 성공했지만 Kafka 발행 실패 가능
+- Kafka 발행 성공 후 DB 롤백 가능
+- 재시도/멱등성/순서 보장을 애플리케이션에서 직접 구현해야 함
+
+> DB 변경과 메시지 발행 사이에 분산 트랜잭션 문제가 발생
+
+
+#### 이 한계점들을 통합적으로 해결하기 위해 저희는 최종적으로 CDC(Debezium) + Outbox 패턴을 도입했습니다
+
+**핵심 전략**
+- DB 변경 + outbox_event INSERT를 하나의 트랜잭션으로 묶는다
+- Debezium이 WAL(Logical Replication)을 통해 커밋된 변경만 감지한다
+- Kafka Topic으로 자동 발행한다
+- Consumer가 Redis 상태를 동기화한다
+
+**결과적으로 커밋된 DB 상태만 Redis에 반영되는 구조가 됩니다.**
+
+> 정합성 문제를 애플리케이션 코드에서 보정하는 대신, 데이터베이스 로그 레벨에서 구조적으로 해결한 설계입니다.
+
+## 🔎 동작 흐름
+
+### 예시 1 — 회선 데이터 사용 즉시 차단 상황
 ```mermaid
 sequenceDiagram
   autonumber
@@ -297,7 +351,10 @@ sequenceDiagram
   note over R: Redis 정책 상태 동기화 완료
 ```
 
-## 🔎 예시 2 — Family 구성원 추가 흐름 (FAMILY_MEMBER_ADDED)
+> DB 변경과 이벤트 기록이 하나의 트랜잭션으로 묶이므로 Commit 성공 시에만 Redis가 변경됩니다
+
+
+### 예시 2 — 가족 결합에 구성원이 추가된 상황
 ```mermaid
 sequenceDiagram
   autonumber
@@ -323,21 +380,35 @@ sequenceDiagram
   K->>FC: 메시지 소비
 
   FC->>R: HINCRBY limit:family:{familyId}
-  Note right of R: 가족 전체 공유 데이터 한도 증가 (family_limit 갱신)
+  Note right of R: 가족 전체 공유 데이터 한도 증가
 
   FC->>R: HSET idx:sub:family {subId} {familyId}
-  Note right of R: 구성원이 어떤 가족에 속하는지 역참조 인덱스 생성
+  Note right of R: 구성원 ↔ 가족 인덱스 동기화
 
   FC->>R: SADD idx:family:subs:{familyId} {subId}
-  Note right of R: 가족에 속한 구성원 목록 추가 (가족 단위 조회용)
+  Note right of R: 가족 구성원 목록 갱신
 
   alt PRIORITY 모드인 경우
     FC->>R: ZADD priority:family:{familyId} {score} {subId}
-    Note right of R: 우선순위 ZSET에 자동 정렬 삽입\n(기존 최대 score + 1)
+    Note right of R: 우선순위 ZSET 자동 정렬
   end
 
   Note over R: Redis 가족 상태 동기화 완료
 ```
+
+> 여러 Redis Key를 동시에 업데이트해야 하는 구조에서도 CDC 기반 이벤트 처리를 통해 정합성을 유지합니다.
+
+
+## 🔁 Redis-only의 한계와 RDB 기반 정합성 아키텍처 전환
+
+1차 MVP에서는 **Redis 단독**으로 사용량 반영/정책 판정/알림 Outbox까지 처리해 기능을 완성했습니다.  
+다만 Redis-only 구조는 운영 단계에서 아래 2가지 리스크가 본질적으로 남습니다.
+
+</br>
+
+---
+
+</br>
 
 ### ⚠️ Redis-only의 구조적 한계
 
