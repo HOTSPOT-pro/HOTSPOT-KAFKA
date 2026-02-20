@@ -6,9 +6,12 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Semaphore;
 
 import jakarta.annotation.PostConstruct;
 
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.data.domain.Range;
 import org.springframework.data.redis.connection.RedisStreamCommands;
@@ -44,6 +47,8 @@ public class OutboxAlertPublisher {
     private final StringRedisTemplate redis;
     private final KafkaTemplate<String, UsageAlertEvent> kafka;
     private final ObjectMapper om;
+    private final Executor callbackExecutor;
+    private final Semaphore inFlight;
 
     private final String topic;
     private final String streamKey;
@@ -73,11 +78,15 @@ public class OutboxAlertPublisher {
             @Value("${app.outbox.usage-alerts.max-attempts:20}") int maxAttempts,
             @Value("${app.outbox.usage-alerts.meta-ttl-seconds:1209600}") long metaTtlSeconds,
             @Value("${app.outbox.usage-alerts.reclaim-min-idle-ms:60000}") long reclaimMinIdleMs,
-            @Value("${app.outbox.usage-alerts.reclaim-batch-size:100}") long reclaimBatchSize
+            @Value("${app.outbox.usage-alerts.reclaim-batch-size:100}") long reclaimBatchSize,
+            @Value("${app.outbox.usage-alerts.max-in-flight:500}") int maxInFlight,
+            @Qualifier("outboxAlertCallbackExecutor") Executor callbackExecutor
     ) {
         this.redis = redis;
         this.kafka = kafka;
         this.om = om;
+        this.callbackExecutor = callbackExecutor;
+        this.inFlight = new Semaphore(maxInFlight);
         this.topic = topic;
         this.streamKey = streamKey;
         this.dlqStreamKey = dlqStreamKey;
@@ -94,17 +103,23 @@ public class OutboxAlertPublisher {
 
     @PostConstruct
     public void initializeConsumerGroup() {
-        // 애플리케이션 기동 시 consumer group 보장
         ensureGroup();
     }
 
     // 신규 outbox 엔트리 발행 + reclaim 루프
     @Scheduled(fixedDelayString = "${app.outbox.usage-alerts.poll-delay-ms:500}")
     public void publishFromOutbox() {
+        // 비동기 전송 상한에 도달하면 다음 스케줄 주기에 처리한다.
+        int availableForNew = inFlight.availablePermits();
+        if (availableForNew <= 0) {
+            return;
+        }
+
+        long newReadCount = Math.min(readCount, availableForNew);
         List<MapRecord<String, Object, Object>> newRecords = redis.opsForStream().read(
                 Consumer.from(group, consumerName),
                 StreamReadOptions.empty()
-                        .count(readCount)
+                        .count(newReadCount)
                         .block(Duration.ofMillis(blockMs)),
                 StreamOffset.create(streamKey, ReadOffset.lastConsumed())
         );
@@ -115,13 +130,22 @@ public class OutboxAlertPublisher {
 
     // 죽은 consumer가 남긴 pending 엔트리를 재할당
     private void reclaimPending() {
-        PendingMessages pending = redis.opsForStream().pending(streamKey, group, Range.unbounded(), reclaimBatchSize);
+        int availableForReclaim = inFlight.availablePermits();
+        if (availableForReclaim <= 0) {
+            return;
+        }
+
+        long pendingReadCount = Math.min(reclaimBatchSize, availableForReclaim);
+        PendingMessages pending = redis.opsForStream().pending(streamKey, group, Range.unbounded(), pendingReadCount);
         if (pending == null || pending.isEmpty()) {
             return;
         }
 
-        List<RecordId> staleIds = new ArrayList<>();
+        List<RecordId> staleIds = new ArrayList<>(availableForReclaim);
         for (PendingMessage msg : pending) {
+            if (staleIds.size() >= availableForReclaim) {
+                break;
+            }
             Duration elapsed = msg.getElapsedTimeSinceLastDelivery();
             if (elapsed != null && elapsed.toMillis() >= reclaimMinIdleMs) {
                 staleIds.add(msg.getId());
@@ -167,10 +191,26 @@ public class OutboxAlertPublisher {
 
         try {
             UsageAlertEvent event = om.readValue(payload, UsageAlertEvent.class);
-            kafka.send(topic, kafkaKey, event).join();
+            // permit 획득에 실패하면 ACK 없이 두어 다음 주기에서 재처리한다.
+            if (!inFlight.tryAcquire()) {
+                return;
+            }
 
-            redis.opsForStream().acknowledge(streamKey, group, record.getId());
-            redis.delete(metaKey(streamId));
+            // 스케줄러 스레드를 막지 않도록 콜백에서 후처리를 수행한다.
+            kafka.send(topic, kafkaKey, event).whenCompleteAsync((result, ex) -> {
+                try {
+                    if (ex == null) {
+                        redis.opsForStream().acknowledge(streamKey, group, record.getId());
+                        redis.delete(metaKey(streamId));
+                        return;
+                    }
+                    handleFailure(record, asException(ex));
+                } catch (Exception callbackError) {
+                    handleFailure(record, callbackError);
+                } finally {
+                    inFlight.release();
+                }
+            }, callbackExecutor);
         } catch (Exception e) {
             handleFailure(record, e);
         }
@@ -253,6 +293,13 @@ public class OutboxAlertPublisher {
 
     private String asString(Object value) {
         return value == null ? null : String.valueOf(value);
+    }
+
+    private Exception asException(Throwable t) {
+        if (t instanceof Exception ex) {
+            return ex;
+        }
+        return new RuntimeException(t);
     }
 
     private boolean isBusyGroup(Exception e) {
