@@ -42,29 +42,6 @@ Spring Boot + Kafka + Redis + PostgreSQL 기반의 **실시간 데이터 사용�
 ```mermaid
 sequenceDiagram
   autonumber
-  participant S as UsageScheduler
-  participant G as UsageGenerator
-  participant R as Redis(Lua validation)
-  participant O as UsageOrchestrator
-  participant KP as UsageKafkaProducer
-  participant K as Kafka(usage-events)
-
-  S->>G: @Scheduled(fixedDelay=1000)
-  G->>R: EVAL usage_valid_batch.lua (batch)
-  R->>R: 정책 검사 (즉시/시간/앱/반복 차단)
-  R->>R: 선물 한도 시뮬레이션
-  R->>R: 개인 요금제 잔여 체크
-  R->>R: 가족 공용 한도 처리 (PRIORITY/FIFO)
-  R-->>G: 승인된 eventId 목록 반환
-
-  G->>O: approved events 전달
-  O->>KP: sendUsage(event)
-  KP->>K: produce usage-event
-```
-
-```mermaid
-sequenceDiagram
-  autonumber
   participant K as Kafka(usage-events)
   participant UC as UsageEventConsumer
   participant R as Redis(Lua)
