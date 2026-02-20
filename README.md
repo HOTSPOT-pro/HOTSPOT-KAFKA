@@ -420,10 +420,6 @@ sequenceDiagram
 
 </br>
 
----
-
-</br>
-
 ### ⚠️ Redis-only의 구조적 한계
 
 #### 1) 안정성(내구성) 리스크
