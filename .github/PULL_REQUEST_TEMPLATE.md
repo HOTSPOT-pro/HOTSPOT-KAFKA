@@ -6,7 +6,7 @@ HOTSPOT-123
 ---
 
 ## 🔗 GitHub 이슈
-<!-- 자동 close를 원하면 아래 형식으로 작성 -->
+<!-- 자동 close를 원하면 아래 형식으로 작성
 예) Closes #12
 -->
 Closes #12
