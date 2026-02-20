@@ -325,8 +325,6 @@ DB UPDATE → Kafka 발행 → Consumer → Redis 반영
 - Kafka Topic으로 자동 발행한다
 - Consumer가 Redis 상태를 동기화한다
 
-**결과적으로 커밋된 DB 상태만 Redis에 반영되는 구조가 됩니다**
-
 > 정합성 문제를 애플리케이션 코드에서 보정하는 대신, 데이터베이스 로그 레벨에서 구조적으로 해결한 설계입니다.
 
 </br>
@@ -363,6 +361,7 @@ sequenceDiagram
 
 > DB 변경과 이벤트 기록이 하나의 트랜잭션으로 묶이므로 Commit 성공 시에만 Redis가 변경됩니다
 
+</br>
 
 ### 예시 2 — 가족 결합에 구성원이 추가된 상황
 ```mermaid
