@@ -7,6 +7,125 @@
 ---
 </br>
 
+## 🚀 HotSpot Worker: 사용량 이벤트 발행 (Producer)
+
+실시간 사용량 집계 파이프라인은 usage-events가 Kafka에 적재되는 시점부터 시작됩니다.
+하지만 이 이벤트는 단순히 랜덤으로 발행되는 것이 아니라, 정책 검증과 한도 시뮬레이션을 통과한 이벤트만 발행되도록 설계되어 있습니다.
+
+핵심은 Kafka 발행 전에 Redis Lua로 정책/한도 검증을 배치 단위로 수행하는 구조입니다.
+
+</br>
+
+## 🗺️ 개요
+
+### 1) 문제
+실시간 이벤트 환경에서는 **정책과 한도**가 고정되어 있지 않습니다.
+- **부모가 앱 차단을 설정하는 순간**
+- **가족 공용 데이터 한도를 변경하는 순간**
+- **선물 데이터가 추가/회수되는 순간**
+
+이 모든 변경은 **이벤트 생성 시점과 처리 시점 사이**에 발생할 수 있습니다.
+
+특히 다음과 같은 문제가 존재합니다.
+- Producer에서 정책/한도 검증 없이 무조건 Kafka에 적재할 경우
+→ 불필요한 이벤트가 대량으로 Consumer까지 전달됨
+
+- Producer에서 검증했더라도, Kafka 적재 이후 정책/한도가 변경될 경우
+→ Consumer가 이를 재검증하지 않을 경우 잘못된 사용 반영 발생
+
+즉, **이벤트 생성 시점과 상태 반영 시점 사이의 시간차**가 정합성 리스크의 근본 원인입니다.
+
+### 2) 해결
+HotSpot은 이를 다음과 같이 설계했습니다.
+
+**1차 방어: Producer 단계 정책/한도 검증**
+- Redis Lua로 정책/차단/한도 시뮬레이션 수행
+- 사용 불가 이벤트는 Kafka에 적재하지 않음
+- 불필요한 이벤트를 사전에 차단하여 스트림 정제
+- Kafka 부하 감소 및 다운스트림 오염 방지
+
+Producer는 **정책 게이트 역할**을 수행합니다.
+
+
+**2차 방어: Consumer 단계 원자적 재검증**
+Consumer에서는 usage_atomic.lua를 통해:
+	•	dedup 체크
+	•	실제 사용량 반영
+	•	임계치 계산
+	•	알림 Outbox 적재
+
+이 모든 과정을 **Redis Lua 원자 연산**으로 처리하여 
+**정책/한도 변경이 Producer 이후 발생하더라도 Consumer에서 실제 반영 시점의 최신 상태 기준으로 처리**
+
+</br>
+
+## 🔎 데이터 흐름: Scheduler → Redis Lua 검증 → Kafka usage-events 발행
+```mermaid
+sequenceDiagram
+  autonumber
+  participant S as UsageScheduler
+  participant G as UsageGenerator
+  participant R as Redis(Lua validation)
+  participant O as UsageOrchestrator
+  participant KP as UsageKafkaProducer
+  participant K as Kafka(usage-events)
+
+  S->>G: @Scheduled(fixedDelay=1000)
+  G->>R: EVAL usage_valid_batch.lua (batch)
+  R->>R: 정책 검사 (즉시/시간/앱/반복 차단)
+  R->>R: 선물 한도 시뮬레이션
+  R->>R: 개인 요금제 잔여 체크
+  R->>R: 가족 공용 한도 처리 (PRIORITY/FIFO)
+  R-->>G: 승인된 eventId 목록 반환
+
+  G->>O: approved events 전달
+  O->>KP: sendUsage(event)
+  KP->>K: produce usage-event
+```
+
+### 흐름 상세
+
+#### Step 0. Scheduler 기반 이벤트 생성
+- @Scheduled(fixedDelay=1000)로 1초마다 이벤트 생성
+- Redis에 등록된 가족/구성원(subId)을 기준으로 랜덤 사용량 생성
+- 대량 이벤트 상황(부하/스트리밍 환경)을 가정한 구조
+
+</br>
+
+#### Step 1. Redis Lua 기반 배치 정책 검증
+
+데이터 사용량 이벤트를 생성하여 Kafka로 바로 보내지 않습니다.
+Redis Lua Script를 활용하여 "이 사용자가 현재 데이터를 쓸 수 있는 사용자인지"를 먼저 검증한 후 이를 통과한 사용자들에 대해서만 Kafka로 이벤트를 발행합니다.
+
+- **정책 차단 검사**
+	•	즉시 차단 (block:immediate)
+	•	시간 차단 (block:time)
+	•	앱 차단 (block:app)
+	•	반복 차단 (block:repeat)
+
+- **선물 데이터 소진 시뮬레이션**
+	•	idx:gift:* 정렬 기준으로 선물 순서 보장
+	•	남은 gift_limit 계산
+	•	메모리 캐시 기반 차감 시뮬레이션
+
+- **개인 요금제 데이터 잔여 체크**
+	•	limit:sub
+	•	usage:sub:{yyyyMM}
+	•	남은 개인 한도 계산
+
+- **가족 공용 데이터 한도 처리**
+	•	priority:family:{familyId} 존재 여부에 따라 **우선순위 처리 모드 OR 선착순 모드**
+	•	가족 전체 한도 + 가족 공용 데이터 구성원 개별 한도 동시 체크
+
+</br>
+
+#### Step 2. 승인된 이벤트만 Kafka로 발행
+- Redis Lua가 반환한 **승인된 eventId만 필터링하여 Kafka usage-events Topic**에 적재합니다.
+- **정책 검증 위반 이벤트나 잔여 한도 초과 이벤트**는 Topic에 적재되지 않습니다.
+
+</br>
+
+
 ## 🚚 HotSpot Worker: 사용량 집계 & 알림 파이프라인
 
 Spring Boot + Kafka + Redis + PostgreSQL 기반의 **실시간 데이터 사용량 집계 및 임계치 알림 파이프라인**입니다.  
