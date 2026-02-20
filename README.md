@@ -269,6 +269,7 @@ Redis는 정책/한도 판단을 위한 실시간 상태 레이어로 사용합�
 따라서 두 저장소의 상태는 항상 동일해야 합니다.
 
 </br>
+
 ## 🗺️ 개요
 
 ### 1) 문제
@@ -282,7 +283,9 @@ HotSpot에서 다음과 같은 변경은 모두 PostgreSQL에서 발생합니다
 
 우리는 이를 해결하기 위해 3가지 방식을 검토했습니다.
 
-1. User Server가 Redis를 직접 업데이트
+</br>
+
+**1. User Server가 Redis를 직접 업데이트**
 
 ```
 DB UPDATE → Redis UPDATE
@@ -296,7 +299,9 @@ DB UPDATE → Redis UPDATE
 
 > RDB와 Redis 사이의 원자성을 보장할 수 없음
 
-2. User Server가 Kafka 이벤트를 직접 발행
+</br>
+
+**2. User Server가 Kafka 이벤트를 직접 발행**
 
 ```
 DB UPDATE → Kafka 발행 → Consumer → Redis 반영
@@ -309,8 +314,10 @@ DB UPDATE → Kafka 발행 → Consumer → Redis 반영
 
 > DB 변경과 메시지 발행 사이에 분산 트랜잭션 문제가 발생
 
+</br>
 
-#### 이 한계점들을 통합적으로 해결하기 위해 저희는 최종적으로 CDC(Debezium) + Outbox 패턴을 도입했습니다
+**3. User Server가 Redis를 직접 업데이트**
+**위의 두 가지 방식에서 나온 한계점들을 통합적으로 해결하기 위해 저희는 최종적으로 CDC(Debezium) + Outbox 패턴을 도입했습니다**
 
 **핵심 전략**
 - DB 변경 + outbox_event INSERT를 하나의 트랜잭션으로 묶는다
@@ -318,7 +325,7 @@ DB UPDATE → Kafka 발행 → Consumer → Redis 반영
 - Kafka Topic으로 자동 발행한다
 - Consumer가 Redis 상태를 동기화한다
 
-**결과적으로 커밋된 DB 상태만 Redis에 반영되는 구조가 됩니다.**
+**결과적으로 커밋된 DB 상태만 Redis에 반영되는 구조가 됩니다**
 
 > 정합성 문제를 애플리케이션 코드에서 보정하는 대신, 데이터베이스 로그 레벨에서 구조적으로 해결한 설계입니다.
 
