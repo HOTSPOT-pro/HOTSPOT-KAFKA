@@ -122,6 +122,7 @@ Redis Lua Script를 활용하여 "이 사용자가 현재 데이터를 쓸 수 �
 - Redis Lua가 반환한 **승인된 eventId만 필터링하여 Kafka usage-events Topic**에 적재합니다.
 - **정책 검증 위반 이벤트나 잔여 한도 초과 이벤트**는 Topic에 적재되지 않습니다.
 
+---
 </br>
 
 
