@@ -26,7 +26,7 @@ public class UsageGenerator {
 
     private static final int MIN_USAGE_KB = 50;
     private static final int MAX_USAGE_KB = 500;
-    private static final int EVENT_SIZE = 1000;
+    private static final int EVENT_SIZE = 5000;
 
 
     public void produceEvent() {
