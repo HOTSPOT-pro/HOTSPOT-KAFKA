@@ -48,13 +48,16 @@ public class UsageGenerator {
             throw new IllegalStateException("No family subs found");
         }
 
+        List<Object> familyObjs =
+                redisTemplate.opsForHash()
+                        .multiGet(SUB_FAMILY_IDX_KEY, new ArrayList<>(subIds));
+
         List<UsageEvent> events = new ArrayList<>(subIds.size());
 
-        for (String subIdStr : subIds) {
+        for (int i = 0; i < subIds.size(); i++) {
 
-            Object familyObj =
-                    redisTemplate.opsForHash()
-                            .get(SUB_FAMILY_IDX_KEY, subIdStr);
+            String subIdStr = subIds.get(i);
+            Object familyObj = familyObjs.get(i);
 
             if (familyObj == null) {
                 continue;
