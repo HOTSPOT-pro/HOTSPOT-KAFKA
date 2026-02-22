@@ -105,6 +105,7 @@ local function add_outbox(alertType, targetKey, kafkaKey, thresholdValue, remain
 
   local payload = {
     alertId = alertId,
+    eventType = "USAGE_THRESHOLD",
     alertType = alertType,
     threshold = tostring(thresholdValue),
     occurredAt = occurredAt,
