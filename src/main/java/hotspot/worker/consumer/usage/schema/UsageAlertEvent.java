@@ -3,11 +3,11 @@ package hotspot.worker.consumer.usage.schema;
 import java.time.Instant;
 
 /**
- * usage-alert-events 발행 스키마
+ * Unified alert event schema published to user-alert-events.
  */
 public record UsageAlertEvent(
-        // 다운스트림 멱등키: {eventId}:{alertType}:{targetKey}
         String alertId,
+        String eventType,
         String alertType,
         String threshold,
         Instant occurredAt,
