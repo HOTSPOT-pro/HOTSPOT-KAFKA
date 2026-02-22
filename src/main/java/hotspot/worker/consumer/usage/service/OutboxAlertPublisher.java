@@ -67,7 +67,7 @@ public class OutboxAlertPublisher {
             StringRedisTemplate redis,
             KafkaTemplate<String, UsageAlertEvent> kafka,
             ObjectMapper om,
-            @Value("${app.topics.usage-alert-events}") String topic,
+            @Value("${app.topics.user-alert-events}") String topic,
             @Value("${app.outbox.usage-alerts.stream-key:outbox:usage-alerts:v1}") String streamKey,
             @Value("${app.outbox.usage-alerts.dlq-stream-key:outbox:usage-alerts:dlq:v1}") String dlqStreamKey,
             @Value("${app.outbox.usage-alerts.meta-key-prefix:outbox:meta:usage-alerts:v1:}") String metaKeyPrefix,
