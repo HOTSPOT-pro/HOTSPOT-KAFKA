@@ -28,13 +28,12 @@ spring:
 app:
   topics:
     usage-events: usage-events
-    usage-alert-events: usage-alert-events
+    user-alert-events: user-alert-events
     family-events: family-events
     subscription-events: subscription-events
 
   consumer-groups:
     usage: usage-consumer-group
-    alert: usage-alert-consumer-group
     family: family-consumer-group
     subscription: subscription-consumer-group
 

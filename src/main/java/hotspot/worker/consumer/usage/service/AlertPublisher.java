@@ -17,7 +17,7 @@ public class AlertPublisher {
 
     public AlertPublisher(
             KafkaTemplate<String, UsageAlertEvent> kafka,
-            @Value("${app.topics.usage-alert-events}") String topic
+            @Value("${app.topics.user-alert-events}") String topic
     ) {
         this.kafka = kafka;
         this.topic = topic;
