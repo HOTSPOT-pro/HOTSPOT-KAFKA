@@ -63,7 +63,6 @@ public class UsageAlertOutboxAppender {
             UsageAlertEvent event = buildEvent(
                     source,
                     "PLAN_REMAINING",
-                    aggregateId,
                     source.subId(),
                     null,
                     null,
@@ -77,7 +76,6 @@ public class UsageAlertOutboxAppender {
             UsageAlertEvent event = buildEvent(
                     source,
                     "FAMILY_POOL_REMAINING",
-                    aggregateId,
                     null,
                     source.familyId(),
                     null,
@@ -91,7 +89,6 @@ public class UsageAlertOutboxAppender {
             UsageAlertEvent event = buildEvent(
                     source,
                     "GIFT_REMAINING",
-                    aggregateId,
                     source.subId(),
                     null,
                     giftFire.giftId(),
@@ -107,7 +104,6 @@ public class UsageAlertOutboxAppender {
     private UsageAlertEvent buildEvent(
             UsageEvent source,
             String alertType,
-            String targetKey,
             Long subId,
             Long familyId,
             String giftId,
