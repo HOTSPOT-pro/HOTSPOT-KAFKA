@@ -1,21 +1,15 @@
 package hotspot.worker.consumer.usage.schema;
 
-import java.time.Instant;
+import java.time.LocalDateTime;
 
-/**
- * Unified alert event schema published to user-alert-events.
- */
 public record UsageAlertEvent(
         String alertId,
         String eventType,
         String alertType,
-        String threshold,
-        Instant occurredAt,
         Long subId,
         Long familyId,
+        String threshold,
         String giftId,
-        long remainingBytes,
-        int remainingPct,
-        String sourceEventId
+        LocalDateTime createdTime
 ) {
 }
