@@ -36,22 +36,3 @@ app:
     usage: usage-consumer-group
     family: family-consumer-group
     subscription: subscription-consumer-group
-
-  outbox:
-    usage-alerts:
-      stream-key: outbox:usage-alerts:v1
-      group: usage-alerts-pub-g1
-      consumer-name: ${HOSTNAME:worker}:${random.uuid}
-      read-count: 100
-      block-ms: 2000
-      poll-delay-ms: 500
-      max-attempts: 20
-      max-in-flight: 500
-      meta-key-prefix: "outbox:meta:usage-alerts:v1:"
-      meta-ttl-seconds: 1209600
-      dlq-stream-key: outbox:usage-alerts:dlq:v1
-      reclaim-min-idle-ms: 60000
-      reclaim-batch-size: 100
-      callback-executor:
-        pool-size: 4
-        queue-capacity: 1000

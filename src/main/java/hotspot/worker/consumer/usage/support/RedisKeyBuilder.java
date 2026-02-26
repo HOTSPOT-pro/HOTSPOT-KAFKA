@@ -8,9 +8,6 @@ import java.util.List;
  * usage Lua 실행용 Redis 키를 규약대로 생성하는 빌더
  */
 public final class RedisKeyBuilder {
-
-    private static final String OUTBOX_USAGE_ALERTS_STREAM_KEY = "outbox:usage-alerts:v1";
-
     private final ZoneId zone;
 
     public RedisKeyBuilder(ZoneId zone) {
@@ -23,8 +20,7 @@ public final class RedisKeyBuilder {
             String yyyymm,
             String giftLimitPrefix,
             String giftUsagePrefix,
-            String giftNotifyPrefix,
-            String outboxStreamKey
+            String giftNotifyPrefix
     ) {
     }
 
@@ -64,8 +60,7 @@ public final class RedisKeyBuilder {
                 notifyPlanMonKey,
                 notifyPlanDayKey,
                 notifyFamilyMonKey,
-                dedupKey,
-                OUTBOX_USAGE_ALERTS_STREAM_KEY
+                dedupKey
         );
 
         String giftLimitPrefix = "limit:gift:" + subId + ":";
@@ -77,8 +72,7 @@ public final class RedisKeyBuilder {
                 yyyymm,
                 giftLimitPrefix,
                 giftUsagePrefix,
-                giftNotifyPrefix,
-                OUTBOX_USAGE_ALERTS_STREAM_KEY
+                giftNotifyPrefix
         );
     }
 }

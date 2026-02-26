@@ -26,7 +26,6 @@ public class UsageLuaExecutor {
     private static final long TTL_DAY_SECONDS = 172_800L;
     private static final long TTL_NOTIFY_SECONDS = 2_678_400L;
     private static final long TTL_DEDUP_SECONDS = 86_400L;
-    private static final long OUTBOX_STREAM_MAXLEN_APPROX = 200_000L;
 
     private final StringRedisTemplate redis;
     private final DefaultRedisScript<List> usageAtomicScript;
@@ -45,6 +44,7 @@ public class UsageLuaExecutor {
         this.om = om;
     }
 
+    // usage_atomic.lua를 실행하고 반환값을 파싱해 UsageLuaResult로 변환한다.
     public UsageLuaResult execute(UsageEvent ev) {
         RedisKeyBuilder.Keys keysPack =
                 keyBuilder.build(ev.subId(), ev.familyId(), ev.eventId(), ev.occurredAt());
@@ -63,8 +63,7 @@ public class UsageLuaExecutor {
                 ev.eventId(),
                 ev.occurredAt().toString(),
                 String.valueOf(ev.subId()),
-                String.valueOf(ev.familyId()),
-                String.valueOf(OUTBOX_STREAM_MAXLEN_APPROX)
+                String.valueOf(ev.familyId())
         );
 
         Object[] argvArray = argv.toArray(new Object[0]);
@@ -116,7 +115,7 @@ public class UsageLuaExecutor {
         );
     }
 
-    // fired_gifts JSON을 GiftFire 리스트로 변환
+    // Lua가 반환한 fired_gifts JSON 문자열을 GiftFire 리스트로 변환한다.
     private List<GiftFire> parseGiftFires(String json) {
         if (json == null || json.isBlank()) {
             return List.of();
@@ -141,7 +140,7 @@ public class UsageLuaExecutor {
         }
     }
 
-    // Redis 반환값을 문자열로 변환
+    // Redis/Lua 반환값을 UTF-8 문자열로 통일해서 변환한다.
     private String toStr(Object o) {
         if (o == null) {
             return null;
@@ -152,7 +151,7 @@ public class UsageLuaExecutor {
         return o.toString();
     }
 
-    // Redis 반환값을 숫자로 변환
+    // Redis/Lua 반환값을 숫자로 변환하되 비어있으면 0으로 처리한다.
     private long toLong(Object o) {
         String s = toStr(o);
         if (s == null || s.isBlank()) {
