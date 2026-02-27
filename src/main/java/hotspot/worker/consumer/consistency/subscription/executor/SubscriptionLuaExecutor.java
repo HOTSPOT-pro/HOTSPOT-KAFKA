@@ -97,20 +97,21 @@ public class SubscriptionLuaExecutor {
         );
     }
 
-    public void executeAppPolicy(
+    public void executeAppPolicySnapshot(
             String eventId,
             long subId,
-            String action,
-            long appId
+            List<String> appIds
     ) {
+
+        List<String> keys = List.of(
+                "idem:sub:" + eventId,
+                "block:app:" + subId
+        );
+
         redisTemplate.execute(
                 subscriptionAppScript,
-                List.of(
-                        "idem:sub:" + eventId,
-                        "block:app:" + subId
-                ),
-                action,
-                String.valueOf(appId)
+                keys,
+                appIds.toArray()
         );
     }
 }

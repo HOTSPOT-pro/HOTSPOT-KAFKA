@@ -1,5 +1,8 @@
 package hotspot.worker.consumer.consistency.subscription.handler;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -15,8 +18,7 @@ public class AppPolicyHandler implements SubscriptionEventHandler {
 
     @Override
     public boolean supports(String eventType) {
-        return eventType.equals("APP_BLOCKED")
-                || eventType.equals("APP_UNBLOCKED");
+        return eventType.equals("APP_BLOCK_LIST_UPDATED");
     }
 
     @Override
@@ -24,11 +26,17 @@ public class AppPolicyHandler implements SubscriptionEventHandler {
 
         String eventId = event.get("eventId").asText();
         long subId = event.get("subId").asLong();
-        long appId = event.get("appId").asLong();
-        String type = event.get("type").asText();
 
-        String action = type.equals("APP_BLOCKED") ? "APPLY" : "REMOVE";
+        JsonNode appIdsNode = event.get("appIds");
 
-        executor.executeAppPolicy(eventId, subId, action, appId);
+        List<String> appIds = new ArrayList<>();
+
+        if (appIdsNode != null && appIdsNode.isArray()) {
+            for (JsonNode node : appIdsNode) {
+                appIds.add(node.asText());
+            }
+        }
+
+        executor.executeAppPolicySnapshot(eventId, subId, appIds);
     }
 }
