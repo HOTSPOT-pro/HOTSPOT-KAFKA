@@ -24,7 +24,7 @@ public class SubscriptionEventConsumer {
 
         JsonNode node = objectMapper.readTree(message);
 
-        if (node.isTextual()) {
+        while (node.isTextual()) {
             node = objectMapper.readTree(node.asText());
         }
 
