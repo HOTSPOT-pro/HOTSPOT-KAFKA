@@ -8,7 +8,7 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 
 import hotspot.seed.SeedRunner;
 
-@EnableScheduling
+//@EnableScheduling
 @SpringBootApplication
 public class WorkerApplication {
 
