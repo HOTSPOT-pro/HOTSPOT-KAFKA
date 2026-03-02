@@ -60,15 +60,15 @@ jobs:
             --instance-ids "${{ env.KAFKA_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
             --comment "Deploy kafka-be via SSM" \
-            --parameters commands="sudo /srv/hotspot/bin/deploy-kafka.sh '${{ env.DOCKER_IMAGE }}'" \
+            --parameters "{\"commands\":[\"sudo /srv/hotspot/bin/deploy-kafka.sh ${{ env.DOCKER_IMAGE }}\"]}" \
             --query "Command.CommandId" --output text)
-
+      
           echo "SSM CommandId: $CMD_ID"
-
+      
           aws ssm wait command-executed \
             --command-id "$CMD_ID" \
             --instance-id "${{ env.KAFKA_INSTANCE_ID }}"
-
+      
           aws ssm get-command-invocation \
             --command-id "$CMD_ID" \
             --instance-id "${{ env.KAFKA_INSTANCE_ID }}" \
