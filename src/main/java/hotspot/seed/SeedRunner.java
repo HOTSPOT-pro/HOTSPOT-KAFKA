@@ -282,7 +282,7 @@ public class SeedRunner {
     private void seedBlockRepeat(JdbcTemplate jdbc, StringRedisTemplate redis) {
         String sql = """
                 SELECT ps.sub_id,
-                       ps.policy_sub_id AS policy_id,
+                       ps.block_policy_id AS policy_id,
                        COALESCE(
                          NULLIF(s.snap ->> 'days_csv', ''),
                          NULLIF(array_to_string(ARRAY(
@@ -302,15 +302,19 @@ public class SeedRunner {
                        COALESCE(
                          NULLIF(s.snap ->> 'end_hhmm', ''),
                          NULLIF(s.snap -> 'data' ->> 'endTime', ''),
-                         NULLIF(s.snap ->> 'endTime', ''),
+                        NULLIF(s.snap ->> 'endTime', ''),
                          ''
                         ) AS end_hhmm
                 FROM policy_sub ps
+                JOIN block_policy bp
+                  ON bp.block_policy_id = ps.block_policy_id
                 CROSS JOIN LATERAL (
-                    SELECT ps.date_snapshot::jsonb AS snap
+                    SELECT COALESCE(bp.policy_snapshot::jsonb, '{}'::jsonb) AS snap
                 ) s
-                WHERE ps.is_deleted = false
-                  AND UPPER(COALESCE(s.snap ->> 'policyType', s.snap ->> 'policy_type', '')) IN ('SCHEDULED')
+                WHERE ps.is_active = true
+                  AND bp.is_deleted = false
+                  AND bp.is_active = true
+                  AND UPPER(COALESCE(bp.policy_type::text, s.snap ->> 'policyType', s.snap ->> 'policy_type', '')) IN ('SCHEDULED')
                 """;
 
         List<BlockRepeatRow> rows = jdbc.query(sql, (rs, rowNum) ->
@@ -376,18 +380,22 @@ public class SeedRunner {
     private void seedBlockTime(JdbcTemplate jdbc, StringRedisTemplate redis) {
         String sql = """
                 SELECT ps.sub_id,
-                       ps.policy_sub_id AS policy_id,
+                       ps.block_policy_id AS policy_id,
                        COALESCE(
                          NULLIF(s.snap ->> 'expire_epoch', ''),
                          NULLIF(s.snap -> 'data' ->> 'endTime', ''),
                          NULLIF(s.snap ->> 'endTime', '')
                        ) AS once_end_value
                 FROM policy_sub ps
+                JOIN block_policy bp
+                  ON bp.block_policy_id = ps.block_policy_id
                 CROSS JOIN LATERAL (
-                    SELECT ps.date_snapshot::jsonb AS snap
+                    SELECT COALESCE(bp.policy_snapshot::jsonb, '{}'::jsonb) AS snap
                 ) s
-                WHERE ps.is_deleted = false
-                  AND UPPER(COALESCE(s.snap ->> 'policyType', s.snap ->> 'policy_type', '')) = 'ONCE'
+                WHERE ps.is_active = true
+                  AND bp.is_deleted = false
+                  AND bp.is_active = true
+                  AND UPPER(COALESCE(bp.policy_type::text, s.snap ->> 'policyType', s.snap ->> 'policy_type', '')) = 'ONCE'
                 """;
 
         List<BlockTimeRow> rows = jdbc.query(sql, (rs, rowNum) ->
