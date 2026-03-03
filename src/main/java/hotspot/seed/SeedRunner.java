@@ -314,7 +314,9 @@ public class SeedRunner {
                 WHERE ps.is_active = true
                   AND bp.is_deleted = false
                   AND bp.is_active = true
-                  AND UPPER(COALESCE(bp.policy_type::text, s.snap ->> 'policyType', s.snap ->> 'policy_type', '')) IN ('SCHEDULED')
+                  AND UPPER(
+                        COALESCE(bp.policy_type::text, s.snap ->> 'policyType', s.snap ->> 'policy_type', '')
+                      ) IN ('SCHEDULED')
                 """;
 
         List<BlockRepeatRow> rows = jdbc.query(sql, (rs, rowNum) ->
@@ -395,7 +397,9 @@ public class SeedRunner {
                 WHERE ps.is_active = true
                   AND bp.is_deleted = false
                   AND bp.is_active = true
-                  AND UPPER(COALESCE(bp.policy_type::text, s.snap ->> 'policyType', s.snap ->> 'policy_type', '')) = 'ONCE'
+                  AND UPPER(
+                        COALESCE(bp.policy_type::text, s.snap ->> 'policyType', s.snap ->> 'policy_type', '')
+                      ) = 'ONCE'
                 """;
 
         List<BlockTimeRow> rows = jdbc.query(sql, (rs, rowNum) ->
