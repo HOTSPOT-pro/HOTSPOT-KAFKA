@@ -10,6 +10,9 @@ public record UsageAlertEvent(
         Long familyId,
         String threshold,
         String giftId,
+        String providedAmount,
+        String usedPercent,
+        String usedAmount,
         LocalDateTime createdTime
 ) {
 }
