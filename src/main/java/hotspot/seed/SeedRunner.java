@@ -483,7 +483,7 @@ public class SeedRunner {
                 FROM blocked_service_sub bss
                 JOIN app_blocked_service abs
                   ON abs.app_blocked_service_id = bss.blocked_service_id
-                WHERE bss.is_deleted = false
+                WHERE bss.is_active = true
                   AND abs.is_deleted = false
                 """;
 
