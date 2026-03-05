@@ -1,5 +1,8 @@
 package hotspot.worker.consumer.consistency.subscription.handler;
 
+import static hotspot.worker.common.util.JsonNodeUtils.requireLong;
+import static hotspot.worker.common.util.JsonNodeUtils.requireText;
+
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -30,21 +33,5 @@ public class PolicyHandler implements SubscriptionEventHandler {
         }
 
         executor.replacePolicies(eventId, subId, policiesNode);
-    }
-
-    private String requireText(JsonNode node, String field) {
-        JsonNode v = node.get(field);
-        if (v == null || !v.isTextual()) {
-            throw new IllegalArgumentException("Missing or invalid '" + field + "': " + node);
-        }
-        return v.asText();
-    }
-
-    private long requireLong(JsonNode node, String field) {
-        JsonNode v = node.get(field);
-        if (v == null || !v.isNumber()) {
-            throw new IllegalArgumentException("Missing or invalid '" + field + "': " + node);
-        }
-        return v.asLong();
     }
 }

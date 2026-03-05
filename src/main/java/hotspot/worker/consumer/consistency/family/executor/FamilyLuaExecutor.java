@@ -1,5 +1,8 @@
 package hotspot.worker.consumer.consistency.family.executor;
 
+import static hotspot.worker.common.util.JsonNodeUtils.requireLong;
+import static hotspot.worker.common.util.JsonNodeUtils.requireText;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -260,21 +263,5 @@ public class FamilyLuaExecutor {
                 keys,
                 argv.toArray()
         );
-    }
-
-    private String requireText(JsonNode node, String field) {
-        JsonNode v = node.get(field);
-        if (v == null || !v.isTextual()) {
-            throw new IllegalArgumentException("Missing or invalid '" + field + "'");
-        }
-        return v.asText();
-    }
-
-    private long requireLong(JsonNode node, String field) {
-        JsonNode v = node.get(field);
-        if (v == null || !v.isNumber()) {
-            throw new IllegalArgumentException("Missing or invalid '" + field + "'");
-        }
-        return v.asLong();
     }
 }

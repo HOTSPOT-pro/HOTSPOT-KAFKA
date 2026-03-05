@@ -1,5 +1,8 @@
 package hotspot.worker.consumer.consistency.family.handler;
 
+import static hotspot.worker.common.util.JsonNodeUtils.requireLong;
+import static hotspot.worker.common.util.JsonNodeUtils.requireText;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -24,12 +27,18 @@ public class FamilyCreateHandler implements FamilyEventHandler {
     @Override
     public void handle(JsonNode event) {
 
-        String eventId = event.get("eventId").asText();
-        long familyId = event.get("familyId").asLong();
+        String eventId = requireText(event, "eventId");
+        long familyId = requireLong(event, "familyId");
+
+        JsonNode membersNode = event.get("members");
+
+        if (membersNode == null || !membersNode.isArray()) {
+            throw new IllegalArgumentException("Missing or invalid 'members' array");
+        }
 
         List<Long> members = new ArrayList<>();
 
-        for (JsonNode node : event.get("members")) {
+        for (JsonNode node : membersNode) {
             members.add(node.asLong());
         }
 
