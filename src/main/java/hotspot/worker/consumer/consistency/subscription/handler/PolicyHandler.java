@@ -15,57 +15,36 @@ public class PolicyHandler implements SubscriptionEventHandler {
 
     @Override
     public boolean supports(String eventType) {
-        return eventType.equals("POLICY_APPLIED")
-                || eventType.equals("POLICY_REMOVED");
+        return "POLICY_SNAPSHOT".equals(eventType);
     }
 
     @Override
     public void handle(JsonNode event) {
 
-        String eventId = event.get("eventId").asText();
-        long subId = event.get("subId").asLong();
-        long policyId = event.get("policyId").asLong();
-        String type = event.get("type").asText();
+        String eventId = requireText(event, "eventId");
+        long subId = requireLong(event, "subId");
 
-        if (type.equals("POLICY_APPLIED")) {
-
-            String policyType = event.get("policyType").asText();
-
-            if (policyType.equals("SCHEDULED")) {
-
-                executor.executePolicy(
-                        eventId,
-                        subId,
-                        "APPLY",
-                        "SCHEDULED",
-                        policyId,
-                        event.get("encoded").asText(),
-                        null
-                );
-            } else {
-
-                executor.executePolicy(
-                        eventId,
-                        subId,
-                        "APPLY",
-                        "ONCE",
-                        policyId,
-                        null,
-                        event.get("expireEpoch").asLong()
-                );
-            }
-
-        } else {
-
-            executor.executePolicy(
-                    eventId,
-                    subId,
-                    "REMOVE",
-                    "IGNORED",
-                    policyId,
-                    null,
-                    null
-            );
+        JsonNode policiesNode = event.get("policies");
+        if (policiesNode == null || !policiesNode.isArray()) {
+            throw new IllegalArgumentException("Missing or invalid 'policies' array: " + event);
         }
+
+        executor.replacePolicies(eventId, subId, policiesNode);
+    }
+
+    private String requireText(JsonNode node, String field) {
+        JsonNode v = node.get(field);
+        if (v == null || !v.isTextual()) {
+            throw new IllegalArgumentException("Missing or invalid '" + field + "': " + node);
+        }
+        return v.asText();
+    }
+
+    private long requireLong(JsonNode node, String field) {
+        JsonNode v = node.get(field);
+        if (v == null || !v.isNumber()) {
+            throw new IllegalArgumentException("Missing or invalid '" + field + "': " + node);
+        }
+        return v.asLong();
     }
 }
