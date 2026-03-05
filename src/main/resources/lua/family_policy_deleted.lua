@@ -2,8 +2,14 @@
 -- 1 idem key
 
 -- ARGV
--- 1 policyId
--- 2.. subIds
+-- policyId
+-- subId
+-- subId
+-- END
+-- policyId
+-- subId
+-- subId
+-- END
 
 local ok = redis.call('SET', KEYS[1], '1', 'NX', 'EX', 604800)
 
@@ -11,18 +17,27 @@ if not ok then
 	return 0
 end
 
-local policyId = ARGV[1]
+local i = 1
 
-for i = 2, #ARGV do
+while i <= #ARGV do
 
-	local subId = ARGV[i]
+	local policyId = ARGV[i]
+	i = i + 1
 
-	local repeatKey = 'block:repeat:' .. subId
-	local timeKey = 'block:time:' .. subId
+	while i <= #ARGV and ARGV[i] ~= "END" do
 
-	redis.call('HDEL', repeatKey, policyId)
-	redis.call('ZREM', timeKey, policyId)
+		local subId = ARGV[i]
 
+		local repeatKey = 'block:repeat:' .. subId
+		local timeKey = 'block:time:' .. subId
+
+		redis.call('HDEL', repeatKey, policyId)
+		redis.call('ZREM', timeKey, policyId)
+
+		i = i + 1
+	end
+
+	i = i + 1
 end
 
 return 1

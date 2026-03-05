@@ -58,9 +58,12 @@ public class FamilyLuaExecutor {
     public void removePolicy(JsonNode event) {
 
         String eventId = requireText(event, "eventId");
-        long policyId = requireLong(event, "policyId");
 
-        JsonNode subIdsNode = event.get("subIds");
+        JsonNode policiesNode = event.get("policies");
+
+        if (policiesNode == null || !policiesNode.isArray()) {
+            throw new IllegalArgumentException("Missing policies array");
+        }
 
         List<String> keys = List.of(
                 "idem:policy:" + eventId
@@ -68,10 +71,26 @@ public class FamilyLuaExecutor {
 
         List<String> argv = new ArrayList<>();
 
-        argv.add(String.valueOf(policyId));
+        for (JsonNode policy : policiesNode) {
 
-        for (JsonNode sub : subIdsNode) {
-            argv.add(String.valueOf(sub.asLong()));
+            long policyId = requireLong(policy, "policyId");
+            argv.add(String.valueOf(policyId));
+
+            JsonNode subIdsNode = policy.get("subIds");
+
+            if (subIdsNode == null || !subIdsNode.isArray()) {
+                continue;
+            }
+
+            for (JsonNode sub : subIdsNode) {
+                argv.add(String.valueOf(sub.asLong()));
+            }
+
+            argv.add("END");
+        }
+
+        if (argv.isEmpty()) {
+            return;
         }
 
         redisTemplate.execute(
