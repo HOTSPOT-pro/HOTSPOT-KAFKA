@@ -51,6 +51,15 @@ public class SeedRunner {
             deleteByPattern(redis, "block:app:*");
             deleteByPattern(redis, "priority:family:*");
 
+            deleteByPattern(redis, "usage:sub:*");
+            deleteByPattern(redis, "usage:family:*");
+            deleteByPattern(redis, "usage:gift:*");
+            deleteByPattern(redis, "usage:app:*");
+            deleteByPattern(redis, "notify:sub:*");
+            deleteByPattern(redis, "notify:family:*");
+            deleteByPattern(redis, "notify:gift:*");
+            deleteByPattern(redis, "dedup:evt:*");
+
             redis.delete("idx:sub:family");
             redis.delete("idx:family:subs");
 
