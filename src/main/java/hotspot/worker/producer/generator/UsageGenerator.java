@@ -33,7 +33,7 @@ public class UsageGenerator {
     private static final String FAMILY_SUB_SET_KEY = "idx:family:subs";
 
     private static final int MIN_USAGE_KB = 50;
-    private static final int MAX_USAGE_KB = 500;
+    private static final int MAX_USAGE_KB = 10000;
     private static final int EVENT_SIZE = 5000;
 
 
