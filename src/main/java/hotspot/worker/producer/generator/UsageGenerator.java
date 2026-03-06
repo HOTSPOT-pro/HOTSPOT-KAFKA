@@ -2,7 +2,6 @@ package hotspot.worker.producer.generator;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.ThreadLocalRandom;
 
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
@@ -40,43 +39,33 @@ public class UsageGenerator {
 
     public void produceEvent() {
 
-        List<UsageEvent> events = generateRandomEvents();
+        List<UsageEvent> events = generateFixedEvents();
 
         log.info("Generated events: {}", events.size());
 
         orchestrator.process(events);
     }
 
-    private List<UsageEvent> generateRandomEvents() {
+    private List<UsageEvent> generateFixedEvents() {
 
-        List<UsageEvent> events = new ArrayList<>(EVENT_SIZE);
+        List<UsageEvent> events = new ArrayList<>();
 
-        for (int i = 0; i < EVENT_SIZE; i++) {
+        for (long subId : FIXED_SUB_IDS) {
 
-            long subId =
-                    FIXED_SUB_IDS[
-                            ThreadLocalRandom.current()
-                                    .nextInt(FIXED_SUB_IDS.length)
-                            ];
-
-            // 🔍 Redis 검증
+            // Redis에서 familyId 조회
             Object familyObj =
                     redisTemplate.opsForHash()
                             .get(SUB_FAMILY_IDX_KEY, String.valueOf(subId));
 
             if (familyObj == null) {
                 log.warn("Family mapping not found for subId={}", subId);
-                continue;   // 검증 실패 시 skip
+                continue;
             }
 
             long familyId = Long.parseLong(familyObj.toString());
 
-            int usageKb =
-                    ThreadLocalRandom.current()
-                            .nextInt(MIN_USAGE_KB, MAX_USAGE_KB + 1);
-
             events.add(
-                    UsageEvent.create(subId, familyId, usageKb)
+                    UsageEvent.create(subId, familyId, MAX_USAGE_KB)
             );
         }
 
