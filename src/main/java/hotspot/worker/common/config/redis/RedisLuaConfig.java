@@ -34,6 +34,37 @@ public class RedisLuaConfig {
 
     /* ================= Family 정합성 스크립트 ================= */
 
+    @Bean
+    public DefaultRedisScript<Long> familyPolicyChangedScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptText(loadLua("lua/family_policy_changed.lua"));
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    @Bean
+    public DefaultRedisScript<Long> familyPolicyDeletedScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptText(loadLua("lua/family_policy_deleted.lua"));
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    @Bean
+    public DefaultRedisScript<Long> familyPolicyDeactivateScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptText(loadLua("lua/family_policy_deactivate.lua"));
+        script.setResultType(Long.class);
+        return script;
+    }
+
+    @Bean
+    public DefaultRedisScript<Long> familyCreateScript() {
+        DefaultRedisScript<Long> script = new DefaultRedisScript<>();
+        script.setScriptText(loadLua("lua/family_create.lua"));
+        script.setResultType(Long.class);
+        return script;
+    }
 
     @Bean
     public DefaultRedisScript<Long> familyMemberScript() {
@@ -78,9 +109,9 @@ public class RedisLuaConfig {
     }
 
     @Bean
-    public DefaultRedisScript<Long> subscriptionPolicyScript() {
+    public DefaultRedisScript<Long> subscriptionPolicySnapshotScript() {
         DefaultRedisScript<Long> script = new DefaultRedisScript<>();
-        script.setScriptText(loadLua("lua/subscription_policy.lua"));
+        script.setScriptText(loadLua("lua/subscription_policy_snapshot.lua"));
         script.setResultType(Long.class);
         return script;
     }

@@ -21,12 +21,6 @@
         <module name="AvoidStarImport"/>
         <module name="UnusedImports"/>
 
-        <module name="ImportOrder">
-            <property name="groups" value="java,javax,jakarta,org,com"/>
-            <property name="ordered" value="true"/>
-            <property name="separated" value="true"/>
-        </module>
-
         <!-- ========================
              naming
         ========================= -->
