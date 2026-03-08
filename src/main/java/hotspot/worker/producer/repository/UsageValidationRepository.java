@@ -25,6 +25,7 @@ public class UsageValidationRepository {
 
     private static final DateTimeFormatter HHMM_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
     private static final DateTimeFormatter YYYYMM_FORMATTER = DateTimeFormatter.ofPattern("yyyyMM");
+    private static final DateTimeFormatter YYYYMMDD_FORMATTER = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     private static final ZoneId ZONE_ID = ZoneId.of("Asia/Seoul");
 
@@ -42,6 +43,7 @@ public class UsageValidationRepository {
         args.add(String.valueOf(now.getDayOfWeek().getValue()));
         args.add(now.format(HHMM_FORMATTER));
         args.add(now.format(YYYYMM_FORMATTER));
+        args.add(now.format(YYYYMMDD_FORMATTER));
 
         for (UsageEvent event : events) {
             args.add(event.eventId());

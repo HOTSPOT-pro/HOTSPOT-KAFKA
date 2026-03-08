@@ -52,6 +52,8 @@ local eventId = ARGV[11]
 local occurredAt = ARGV[12]
 local subId = tonumber(ARGV[13])
 local familyId = tonumber(ARGV[14])
+local INF = 9007199254740991
+local DAILY_PLAN_LIMIT_KB = 1048576
 
 -- dedup 키가 있으면 동일 이벤트이므로 "사용량 반영 + 알림 판단"을 하지 않고 DUP로 종료한다.
 if redis.call('EXISTS', KEYS[14]) == 1 then
@@ -74,6 +76,14 @@ local function threshold(quota, used)
   if pct <= 30 then return 30, rem, pct end
   if pct <= 50 then return 50, rem, pct end
   return 101, rem, pct
+end
+
+local function remaining_quota(limit, used)
+  if limit == nil then return 0 end
+  if limit < 0 then return INF end
+  local rem = limit - used
+  if rem < 0 then rem = 0 end
+  return rem
 end
 
 -- 이전 임계치(last)보다 더 낮아질 때만 notify 상태를 갱신하고 발화 여부(fire)를 반환한다.
@@ -102,12 +112,17 @@ local family_member_limit = tonumber(redis.call('HGET', KEYS[3], 'family_limit')
 
 -- 월 누적 사용량(개인/가족/가족풀)을 Redis에서 조회한다.
 local mon_plan_used = tonumber(redis.call('HGET', KEYS[5], 'plan_used') or '0')
+local day_plan_used = tonumber(redis.call('HGET', KEYS[6], 'plan_used') or '0')
 local mon_family_used = tonumber(redis.call('HGET', KEYS[5], 'member_family_used') or '0')
 local mon_pool_used = tonumber(redis.call('HGET', KEYS[7], 'family_used') or '0')
 
+local plan_used_base = mon_plan_used
+if plan_limit == DAILY_PLAN_LIMIT_KB then
+  plan_used_base = day_plan_used
+end
+
 -- 이번 이벤트 처리 시점의 잔여량(요금제/가족풀/가족-개인)을 계산한다.
-local plan_rem = plan_limit - mon_plan_used
-if plan_rem < 0 then plan_rem = 0 end
+local plan_rem = remaining_quota(plan_limit, plan_used_base)
 
 local pool_rem = family_limit_total - mon_pool_used
 if pool_rem < 0 then pool_rem = 0 end
@@ -221,7 +236,7 @@ redis.call('EXPIRE', KEYS[10], ttlDay)
 redis.call('EXPIRE', KEYS[4], ttlMon)
 
 -- 요금제 임계치 변화를 계산하고 월/일 notify 키를 갱신해 발화 여부를 결정한다.
-local plan_used_new = mon_plan_used + plan_take
+local plan_used_new = plan_used_base + plan_take
 local plan_th, plan_rem2, plan_pct = threshold(plan_limit, plan_used_new)
 local plan_fire, plan_last = update_notify(KEYS[11], plan_th)
 update_notify(KEYS[12], plan_th)
