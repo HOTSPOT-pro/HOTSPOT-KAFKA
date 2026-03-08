@@ -5,6 +5,7 @@
 -- 2  dayOfWeek
 -- 3  currentTime (HH:mm)
 -- 4  yyyyMM
+-- 5  yyyyMMdd
 
 -- 이후 5개씩 반복
 -- eventId
@@ -18,6 +19,9 @@ local now = tonumber(ARGV[1])
 local dayOfWeek = ARGV[2]
 local currentTime = ARGV[3]
 local yyyyMM = ARGV[4]
+local yyyyMMdd = ARGV[5]
+local INF = 9007199254740991
+local DAILY_PLAN_LIMIT_KB = 1048576
 
 local result = {}
 
@@ -150,8 +154,16 @@ local function consume_personal_if_possible(subId, usageKb)
 
 	if personalRemainingCache[key] == nil then
 		local limit = tonumber(redis.call("HGET", "limit:sub:" .. key, "plan_limit") or "0")
-		local used  = tonumber(redis.call("HGET", "usage:sub:" .. key .. ":" .. yyyyMM, "plan_used") or "0")
-		personalRemainingCache[key] = math.max(0, limit - used)
+		local usagePeriodKey = yyyyMM
+		if limit == DAILY_PLAN_LIMIT_KB then
+			usagePeriodKey = yyyyMMdd
+		end
+		local used  = tonumber(redis.call("HGET", "usage:sub:" .. key .. ":" .. usagePeriodKey, "plan_used") or "0")
+		if limit < 0 then
+			personalRemainingCache[key] = INF
+		else
+			personalRemainingCache[key] = math.max(0, limit - used)
+		end
 	end
 
 	if personalRemainingCache[key] >= usageKb then
@@ -169,7 +181,7 @@ local familyPending = {}
 -- 1차 루프 : 정책 → 선물 → 개인
 -- ===================================================
 
-for i = 5, #ARGV, 5 do
+for i = 6, #ARGV, 5 do
 
 	local eventId  = ARGV[i]
 	local subId    = ARGV[i+1]
