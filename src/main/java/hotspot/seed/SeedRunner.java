@@ -55,6 +55,7 @@ public class SeedRunner {
             deleteByPattern(redis, "usage:family:*");
             deleteByPattern(redis, "usage:gift:*");
             deleteByPattern(redis, "usage:app:*");
+            deleteByPattern(redis, "usage:3hourly:*");
             deleteByPattern(redis, "notify:sub:*");
             deleteByPattern(redis, "notify:family:*");
             deleteByPattern(redis, "notify:gift:*");
@@ -257,6 +258,13 @@ public class SeedRunner {
 
             String donorDayAppKey = "usage:app:" + row.provideSubId() + ":" + yyyymmdd;
             conn.zIncrBy(b(donorDayAppKey), row.dataAmountKb(), b(giftAppId));
+
+            String donorDay3HourlyAppKey = "usage:3hourly:" + row.provideSubId() + ":" + yyyymmdd;
+            conn.hIncrBy(
+                    b(donorDay3HourlyAppKey),
+                    b(daily3HourlyUsedField(row.createdTime())),
+                    row.dataAmountKb()
+            );
 
             String usageGiftKey = "usage:gift:" + row.targetSubId() + ":" + giftId + ":" + yyyymm;
             conn.hSetNX(b(usageGiftKey), b("gift_used"), b("0"));
@@ -506,5 +514,10 @@ public class SeedRunner {
     }
 
     private record BlockAppRow(long subId, String appId) {
+    }
+
+    private static String daily3HourlyUsedField(LocalDateTime ts) {
+        int bucketHour = (ts.getHour() / 3) * 3;
+        return String.format("%02d_used", bucketHour);
     }
 }
