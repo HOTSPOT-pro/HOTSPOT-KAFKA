@@ -11,7 +11,7 @@
 --  8: usage:family:{familyId}:{yyyymmdd}
 --  9: usage:app:{subId}:{yyyymm}
 -- 10: usage:app:{subId}:{yyyymmdd}
--- 11: usage:app:{subId}:{yyyymmdd}:3hourly
+-- 11: usage:3hourly:{subId}:{yyyymmdd}
 -- 12: notify:sub:{subId}:{yyyymm}
 -- 13: notify:sub:{subId}:{yyyymmdd}
 -- 14: notify:family:{familyId}:{yyyymm}
@@ -235,7 +235,7 @@ redis.call('ZINCRBY', KEYS[10], bytes, appId)
 redis.call('EXPIRE', KEYS[9], ttlMon)
 redis.call('EXPIRE', KEYS[10], ttlDay)
 
--- 일 단위 3시간 버킷 사용량(usage:app:{subId}:{yyyymmdd}:3hourly)을 HASH로 누적 갱신한다.
+-- 일 단위 3시간 버킷 사용량(usage:3hourly:{subId}:{yyyymmdd})을 HASH로 누적 갱신한다.
 redis.call('HINCRBY', KEYS[11], day3HourlyField, bytes)
 redis.call('EXPIRE', KEYS[11], ttlDay)
 

@@ -41,7 +41,7 @@ public final class RedisKeyBuilder {
         String usageFamilyDayKey = "usage:family:" + familyId + ":" + yyyymmdd;
         String usageAppMonKey = "usage:app:" + subId + ":" + yyyymm;
         String usageAppDayKey = "usage:app:" + subId + ":" + yyyymmdd;
-        String usageAppDay3HourlyKey = "usage:app:" + subId + ":" + yyyymmdd + ":3hourly";
+        String usage3HourlyDayKey = "usage:3hourly:" + subId + ":" + yyyymmdd;
 
         String notifyPlanMonKey = "notify:sub:" + subId + ":" + yyyymm;
         String notifyPlanDayKey = "notify:sub:" + subId + ":" + yyyymmdd;
@@ -59,7 +59,7 @@ public final class RedisKeyBuilder {
                 usageFamilyDayKey,
                 usageAppMonKey,
                 usageAppDayKey,
-                usageAppDay3HourlyKey,
+                usage3HourlyDayKey,
                 notifyPlanMonKey,
                 notifyPlanDayKey,
                 notifyFamilyMonKey,
