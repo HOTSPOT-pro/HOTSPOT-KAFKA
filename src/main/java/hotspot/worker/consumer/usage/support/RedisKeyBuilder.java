@@ -18,6 +18,7 @@ public final class RedisKeyBuilder {
     public record Keys(
             List<String> keys,
             String yyyymm,
+            String daily3HourlyUsedField,
             String giftLimitPrefix,
             String giftUsagePrefix,
             String giftNotifyPrefix
@@ -40,6 +41,7 @@ public final class RedisKeyBuilder {
         String usageFamilyDayKey = "usage:family:" + familyId + ":" + yyyymmdd;
         String usageAppMonKey = "usage:app:" + subId + ":" + yyyymm;
         String usageAppDayKey = "usage:app:" + subId + ":" + yyyymmdd;
+        String usage3HourlyDayKey = "usage:3hourly:" + subId + ":" + yyyymmdd;
 
         String notifyPlanMonKey = "notify:sub:" + subId + ":" + yyyymm;
         String notifyPlanDayKey = "notify:sub:" + subId + ":" + yyyymmdd;
@@ -57,6 +59,7 @@ public final class RedisKeyBuilder {
                 usageFamilyDayKey,
                 usageAppMonKey,
                 usageAppDayKey,
+                usage3HourlyDayKey,
                 notifyPlanMonKey,
                 notifyPlanDayKey,
                 notifyFamilyMonKey,
@@ -70,6 +73,7 @@ public final class RedisKeyBuilder {
         return new Keys(
                 keys,
                 yyyymm,
+                TimeKey.daily3HourlyUsedField(occurredAt, zone),
                 giftLimitPrefix,
                 giftUsagePrefix,
                 giftNotifyPrefix

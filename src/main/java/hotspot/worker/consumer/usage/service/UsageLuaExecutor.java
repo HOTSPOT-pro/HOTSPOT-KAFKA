@@ -22,8 +22,8 @@ import hotspot.worker.consumer.usage.support.RedisKeyBuilder;
 @Service
 public class UsageLuaExecutor {
 
-    private static final long TTL_MON_SECONDS = 2_678_400L;
-    private static final long TTL_DAY_SECONDS = 172_800L;
+    private static final long TTL_MON_SECONDS = 15_552_000L;
+    private static final long TTL_DAY_SECONDS = 15_552_000L;
     private static final long TTL_NOTIFY_SECONDS = 2_678_400L;
     private static final long TTL_DEDUP_SECONDS = 86_400L;
 
@@ -63,7 +63,8 @@ public class UsageLuaExecutor {
                 ev.eventId(),
                 ev.occurredAt().toString(),
                 String.valueOf(ev.subId()),
-                String.valueOf(ev.familyId())
+                String.valueOf(ev.familyId()),
+                keysPack.daily3HourlyUsedField()
         );
 
         Object[] argvArray = argv.toArray(new Object[0]);
@@ -73,16 +74,14 @@ public class UsageLuaExecutor {
 
         // dedup 키가 이미 존재하면 DUP 상태로 반환됨
         if (arr.size() == 1 && "DUP".equals(toStr(arr.get(0)))) {
-            return new UsageLuaResult(
-                    true,
-                    0, 0, 0, 0, 0,
-                    false, 101, 0, 0,
-                    false, 101, 0, 0,
-                    List.of()
-            );
+            return ignoredResult();
         }
 
         String status = toStr(arr.get(0));
+        if ("INVALID_BYTES".equals(status)) {
+            // 비정상 bytes 이벤트는 집계를 건드리지 않고 무시한다.
+            return ignoredResult();
+        }
         if (!"OK".equals(status)) {
             throw new IllegalStateException("Lua returned unexpected status: " + status);
         }
@@ -112,6 +111,16 @@ public class UsageLuaExecutor {
                 planFire, planTh, planRem, planPct,
                 famFire, famTh, famRem, famPct,
                 giftFires
+        );
+    }
+
+    private UsageLuaResult ignoredResult() {
+        return new UsageLuaResult(
+                true,
+                0, 0, 0, 0, 0,
+                false, 101, 0, 0,
+                false, 101, 0, 0,
+                List.of()
         );
     }
 

@@ -24,4 +24,11 @@ public final class TimeKey {
         ZonedDateTime z = ts.atZone(zone);
         return String.format("%04d%02d%02d", z.getYear(), z.getMonthValue(), z.getDayOfMonth());
     }
+
+    // 3시간 버킷 필드명(00_used, 03_used ... 21_used)을 반환
+    public static String daily3HourlyUsedField(Instant ts, ZoneId zone) {
+        ZonedDateTime z = ts.atZone(zone);
+        int bucketHour = (z.getHour() / 3) * 3;
+        return String.format("%02d_used", bucketHour);
+    }
 }
