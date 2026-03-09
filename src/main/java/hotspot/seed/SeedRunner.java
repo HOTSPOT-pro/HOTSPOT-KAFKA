@@ -22,6 +22,8 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.util.StringUtils;
 
+import hotspot.worker.consumer.usage.support.TimeKey;
+
 /**
  * 로컬 Redis에 정책/한도 시드 데이터를 적재하는 전용 실행기
  */
@@ -262,7 +264,7 @@ public class SeedRunner {
             String donorDay3HourlyAppKey = "usage:3hourly:" + row.provideSubId() + ":" + yyyymmdd;
             conn.hIncrBy(
                     b(donorDay3HourlyAppKey),
-                    b(daily3HourlyUsedField(row.createdTime())),
+                    b(TimeKey.daily3HourlyUsedField(row.createdTime().atZone(KST).toInstant(), KST)),
                     row.dataAmountKb()
             );
 
@@ -516,8 +518,4 @@ public class SeedRunner {
     private record BlockAppRow(long subId, String appId) {
     }
 
-    private static String daily3HourlyUsedField(LocalDateTime ts) {
-        int bucketHour = (ts.getHour() / 3) * 3;
-        return String.format("%02d_used", bucketHour);
-    }
 }
