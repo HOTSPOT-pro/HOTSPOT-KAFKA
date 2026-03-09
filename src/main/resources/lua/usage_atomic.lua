@@ -11,10 +11,11 @@
 --  8: usage:family:{familyId}:{yyyymmdd}
 --  9: usage:app:{subId}:{yyyymm}
 -- 10: usage:app:{subId}:{yyyymmdd}
--- 11: notify:sub:{subId}:{yyyymm}
--- 12: notify:sub:{subId}:{yyyymmdd}
--- 13: notify:family:{familyId}:{yyyymm}
--- 14: dedup:evt:{eventId}
+-- 11: usage:app:{subId}:{yyyymmdd}:3hourly
+-- 12: notify:sub:{subId}:{yyyymm}
+-- 13: notify:sub:{subId}:{yyyymmdd}
+-- 14: notify:family:{familyId}:{yyyymm}
+-- 15: dedup:evt:{eventId}
 
 -- -------------------------
 -- ARGV
@@ -33,6 +34,7 @@
 -- 12: occurredAt (ISO8601)
 -- 13: subId
 -- 14: familyId
+-- 15: day3HourlyField (00_used, 03_used ... 21_used)
 
 local bytes = tonumber(ARGV[1])
 local appId = ARGV[2]
@@ -52,11 +54,12 @@ local eventId = ARGV[11]
 local occurredAt = ARGV[12]
 local subId = tonumber(ARGV[13])
 local familyId = tonumber(ARGV[14])
+local day3HourlyField = ARGV[15]
 local INF = 9007199254740991
 local DAILY_PLAN_LIMIT_KB = 1048576
 
 -- dedup 키가 있으면 동일 이벤트이므로 "사용량 반영 + 알림 판단"을 하지 않고 DUP로 종료한다.
-if redis.call('EXISTS', KEYS[14]) == 1 then
+if redis.call('EXISTS', KEYS[15]) == 1 then
   return { "DUP" }
 end
 
@@ -232,22 +235,26 @@ redis.call('ZINCRBY', KEYS[10], bytes, appId)
 redis.call('EXPIRE', KEYS[9], ttlMon)
 redis.call('EXPIRE', KEYS[10], ttlDay)
 
+-- 일 단위 3시간 버킷 사용량(usage:app:{subId}:{yyyymmdd}:3hourly)을 HASH로 누적 갱신한다.
+redis.call('HINCRBY', KEYS[11], day3HourlyField, bytes)
+redis.call('EXPIRE', KEYS[11], ttlDay)
+
 -- 선물 인덱스(ZSET)가 월 기간 동안 유지되도록 TTL을 갱신한다.
 redis.call('EXPIRE', KEYS[4], ttlMon)
 
 -- 요금제 임계치 변화를 계산하고 월/일 notify 키를 갱신해 발화 여부를 결정한다.
 local plan_used_new = plan_used_base + plan_take
 local plan_th, plan_rem2, plan_pct = threshold(plan_limit, plan_used_new)
-local plan_fire, plan_last = update_notify(KEYS[11], plan_th)
-update_notify(KEYS[12], plan_th)
+local plan_fire, plan_last = update_notify(KEYS[12], plan_th)
+update_notify(KEYS[13], plan_th)
 
 -- 가족풀 임계치 변화를 계산하고 notify 키를 갱신해 발화 여부를 결정한다.
 local pool_used_new = mon_pool_used + family_take
 local fam_th, fam_rem2, fam_pct = threshold(family_limit_total, pool_used_new)
-local fam_fire, fam_last = update_notify(KEYS[13], fam_th)
+local fam_fire, fam_last = update_notify(KEYS[14], fam_th)
 
 -- 이번 이벤트 처리 완료를 dedup 키로 기록해 중복 처리를 방지한다.
-redis.call('SET', KEYS[14], '1', 'EX', ttlDedup)
+redis.call('SET', KEYS[15], '1', 'EX', ttlDedup)
 
 -- 최종 결과(차감 분배, 임계치 발화 여부/상태, 발화된 선물 목록)를 배열로 반환한다.
 return {
