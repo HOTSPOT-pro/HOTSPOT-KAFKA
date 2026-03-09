@@ -58,6 +58,11 @@ local day3HourlyField = ARGV[15]
 local INF = 9007199254740991
 local DAILY_PLAN_LIMIT_KB = 1048576
 
+-- bytes가 비정상(nil/0/음수)이면 사용량 반영 없이 무시한다.
+if bytes == nil or bytes <= 0 then
+  return { "INVALID_BYTES" }
+end
+
 -- dedup 키가 있으면 동일 이벤트이므로 "사용량 반영 + 알림 판단"을 하지 않고 DUP로 종료한다.
 if redis.call('EXISTS', KEYS[15]) == 1 then
   return { "DUP" }
