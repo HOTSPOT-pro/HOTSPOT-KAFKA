@@ -62,9 +62,9 @@ public class SeedRunner {
             deleteByPattern(redis, "notify:family:*");
             deleteByPattern(redis, "notify:gift:*");
             deleteByPattern(redis, "dedup:evt:*");
+            deleteByPattern(redis, "idx:family:subs:*");
 
             redis.delete("idx:sub:family");
-            redis.delete("idx:family:subs");
 
             seedPlanLimit(jdbc, redis);
             seedFamilyLimit(jdbc, redis);
@@ -191,9 +191,9 @@ public class SeedRunner {
         writeInBatches(redis, rows, PIPELINE_BATCH_SIZE, (conn, row) -> {
             conn.hSet(b("idx:sub:family"), b(Long.toString(row.subId())), b(Long.toString(row.familyId())));
 
-            // 🔥 모든 family 소속 subId를 하나의 SET에 저장
+            // 모든 family 소속 subId를 하나의 SET에 저장
             conn.sAdd(
-                    b("idx:family:subs"),
+                    b("idx:family:subs:" + row.familyId()),
                     b(Long.toString(row.subId()))
             );
 
