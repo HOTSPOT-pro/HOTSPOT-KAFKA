@@ -22,8 +22,8 @@ import hotspot.worker.consumer.usage.support.RedisKeyBuilder;
 @Service
 public class UsageLuaExecutor {
 
-    private static final long TTL_MON_SECONDS = 2_678_400L;
-    private static final long TTL_DAY_SECONDS = 172_800L;
+    private static final long TTL_MON_SECONDS = 15_552_000L;
+    private static final long TTL_DAY_SECONDS = 15_552_000L;
     private static final long TTL_NOTIFY_SECONDS = 2_678_400L;
     private static final long TTL_DEDUP_SECONDS = 86_400L;
 
@@ -63,7 +63,8 @@ public class UsageLuaExecutor {
                 ev.eventId(),
                 ev.occurredAt().toString(),
                 String.valueOf(ev.subId()),
-                String.valueOf(ev.familyId())
+                String.valueOf(ev.familyId()),
+                keysPack.daily3HourlyUsedField()
         );
 
         Object[] argvArray = argv.toArray(new Object[0]);
