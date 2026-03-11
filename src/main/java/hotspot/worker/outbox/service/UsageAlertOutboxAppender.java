@@ -65,7 +65,8 @@ public class UsageAlertOutboxAppender {
 
         if (result.planFired()) {
             String aggregateId = "sub:" + source.subId();
-            UsageMetrics metrics = readPlanMetrics(source);
+            int usedPercent = usedPercentFromRemaining(result.planRemainingPct());
+            UsageMetrics metrics = readPlanMetrics(source, usedPercent);
             UsageAlertEvent event = buildEvent(
                     source,
                     "PLAN_REMAINING",
@@ -80,7 +81,8 @@ public class UsageAlertOutboxAppender {
 
         if (result.familyFired()) {
             String aggregateId = "family:" + source.familyId();
-            UsageMetrics metrics = readFamilyMetrics(source);
+            int usedPercent = usedPercentFromRemaining(result.familyRemainingPct());
+            UsageMetrics metrics = readFamilyMetrics(source, usedPercent);
             UsageAlertEvent event = buildEvent(
                     source,
                     "FAMILY_POOL_REMAINING",
@@ -95,7 +97,8 @@ public class UsageAlertOutboxAppender {
 
         for (GiftFire giftFire : result.giftFires()) {
             String aggregateId = "gift:" + giftFire.giftId();
-            UsageMetrics metrics = readGiftMetrics(source, giftFire.giftId());
+            int usedPercent = usedPercentFromRemaining(giftFire.pct());
+            UsageMetrics metrics = readGiftMetrics(source, giftFire.giftId(), usedPercent);
             UsageAlertEvent event = buildEvent(
                     source,
                     "GIFT_REMAINING",
@@ -138,44 +141,49 @@ public class UsageAlertOutboxAppender {
     }
 
     // 개인 요금제 기준 제공량/사용률/사용량을 읽어온다.
-    private UsageMetrics readPlanMetrics(UsageEvent source) {
+    private UsageMetrics readPlanMetrics(UsageEvent source, int usedPercent) {
         String yyyymm = TimeKey.yyyymm(source.occurredAt(), ALERT_TIME_ZONE);
         long provided = readHashLong("limit:sub:" + source.subId(), "plan_limit");
         long used = readHashLong("usage:sub:" + source.subId() + ":" + yyyymm, "plan_used");
-        return toMetrics(provided, used);
+        return toMetrics(provided, used, usedPercent);
     }
 
     // 가족 공유풀 기준 제공량/사용률/사용량을 읽어온다.
-    private UsageMetrics readFamilyMetrics(UsageEvent source) {
+    private UsageMetrics readFamilyMetrics(UsageEvent source, int usedPercent) {
         String yyyymm = TimeKey.yyyymm(source.occurredAt(), ALERT_TIME_ZONE);
         long provided = readHashLong("limit:family:" + source.familyId(), "family_limit");
         long used = readHashLong("usage:family:" + source.familyId() + ":" + yyyymm, "family_used");
-        return toMetrics(provided, used);
+        return toMetrics(provided, used, usedPercent);
     }
 
     // 선물 데이터 기준 제공량/사용률/사용량을 읽어온다.
-    private UsageMetrics readGiftMetrics(UsageEvent source, String giftId) {
+    private UsageMetrics readGiftMetrics(UsageEvent source, String giftId, int usedPercent) {
         String yyyymm = TimeKey.yyyymm(source.occurredAt(), ALERT_TIME_ZONE);
         String limitKey = "limit:gift:" + source.subId() + ":" + giftId + ":" + yyyymm;
         String usageKey = "usage:gift:" + source.subId() + ":" + giftId + ":" + yyyymm;
         long provided = readHashLong(limitKey, "gift_limit");
         long used = readHashLong(usageKey, "gift_used");
-        return toMetrics(provided, used);
+        return toMetrics(provided, used, usedPercent);
     }
 
     // 원시 byte 값을 알림용 문자열 포맷으로 변환한다.
-    private UsageMetrics toMetrics(long providedRaw, long usedRaw) {
+    private UsageMetrics toMetrics(long providedRaw, long usedRaw, int usedPercentRaw) {
         long provided = Math.max(0L, providedRaw);
         long used = Math.max(0L, usedRaw);
         if (provided > 0 && used > provided) {
             used = provided;
         }
-        long usedPercent = provided == 0 ? 0 : (used * 100) / provided;
+        int usedPercent = Math.max(0, Math.min(100, usedPercentRaw));
         return new UsageMetrics(
                 String.valueOf(provided),
                 String.valueOf(usedPercent),
                 String.valueOf(used)
         );
+    }
+
+    private int usedPercentFromRemaining(int remainingPctRaw) {
+        int remainingPct = Math.max(0, Math.min(100, remainingPctRaw));
+        return 100 - remainingPct;
     }
 
     // Redis Hash 필드를 long으로 읽고, 값이 없으면 0을 반환한다.
