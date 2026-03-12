@@ -175,11 +175,6 @@ for i = 1, #gift_ids do
     redis.call('EXPIRE', gift_usage_key, ttlMon)
     redis.call('EXPIRE', gift_limit_key, ttlMon)
 
-    -- 선물이 완전 소진되면 인덱스(ZSET)에서 제거해 이후 조회/차감을 줄인다.
-    if gift_quota > 0 and gift_used >= gift_quota then
-      redis.call('ZREM', KEYS[4], gid)
-    end
-
     local th, rem2, pct = threshold(gift_quota, gift_used)
     local nkey = giftNotifyPrefix .. gid .. ":" .. yyyymm
     local fire, last = update_notify(nkey, th)
