@@ -99,7 +99,8 @@ public class SubscriptionLuaExecutor {
             long giftLimitBytes,
             long giverSubId,
             String yyyyMMDD,
-            long giftAmountBytes
+            long giftAmountBytes,
+            long appId
     ) {
 
         List<String> keys = List.of(
@@ -118,7 +119,8 @@ public class SubscriptionLuaExecutor {
                 String.valueOf(giftAmountBytes),
                 "plan_used",
                 yyyyMM,
-                yyyyMMDD
+                yyyyMMDD,
+                String.valueOf(appId)
         );
     }
 

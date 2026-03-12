@@ -4,14 +4,17 @@
 -- 3) receiverGiftIdxKey      idx:gift:{receiverSubId}:{yyyyMM}        (ZSET)
 -- 4) giverMonthUsageKey      usage:sub:{giverSubId}:{YYYYMM}          (HASH)
 -- 5) giverDayUsageKey        usage:sub:{giverSubId}:{YYYYMMDD}        (HASH)
+-- 6) giverMonthAppUsageKey   usage:app:{giverSubId}:{YYYYMM}
+-- 7) giverDayAppUsageKey     usage:app:{giverSubId}:{YYYYMMDD}
 
 -- ARGV:
 -- 1) giftId                  (string/number)
 -- 2) giftLimitBytes          (number)  -- 수신자에게 생성되는 gift 버킷 한도(=선물로 받은 양)
 -- 3) giftAmountBytes         (number)  -- 발신자 사용량에 더할 값(=선물로 준 양)
--- 4) usageField              (string)  -- 예: "plan_used" (너 지금 plan_used 쓰는 구조)
+-- 4) usageField              (string)  -- "plan_used"
 -- 5) yyyyMM                  (string)  -- 수신자 idx key에도 들어가지만 혹시 검증/확장용
 -- 6) yyyyMMDD                (string)  -- idem/검증/확장용 (현재는 key에 이미 반영됨)
+-- 7) appId   (20)
 
 -- 0) 멱등키(중복 이벤트 방지)
 local ok = redis.call('SET', KEYS[1], '1', 'NX')
@@ -45,5 +48,21 @@ redis.call('HINCRBY', KEYS[4], ARGV[4], tonumber(ARGV[3]))
 
 -- 4) 발신자 일 사용량 증가
 redis.call('HINCRBY', KEYS[5], ARGV[4], tonumber(ARGV[3]))
+
+-- 5) 발신자 월 app 사용량 증가
+redis.call(
+	'ZINCRBY',
+	KEYS[6],
+	tonumber(ARGV[3]),
+	ARGV[7]
+)
+
+-- 6) 발신자 일 app 사용량 증가
+redis.call(
+	'ZINCRBY',
+	KEYS[7],
+	tonumber(ARGV[3]),
+	ARGV[7]
+)
 
 return 1

@@ -11,6 +11,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class GiftHandler implements SubscriptionEventHandler {
 
+    private static final long GIFT_APP_ID = 20L;
     private final SubscriptionLuaExecutor executor;
 
     @Override
@@ -41,7 +42,8 @@ public class GiftHandler implements SubscriptionEventHandler {
                 giftLimitBytes,
                 giverSubId,
                 yyyyMMDD,
-                giftAmountBytes
+                giftAmountBytes,
+                GIFT_APP_ID
         );
     }
 }
