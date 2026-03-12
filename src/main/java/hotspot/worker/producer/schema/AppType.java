@@ -42,13 +42,9 @@ public enum AppType {
 
     private static final AppType[] VALUES = values();
 
-    public static AppType random() {
-        return VALUES[
-                ThreadLocalRandom.current().nextInt(VALUES.length)
-                ];
-    }
-
     public static Long randomAppId() {
-        return random().getAppId();
+        return VALUES[
+                ThreadLocalRandom.current().nextInt(VALUES.length - 1)
+                ].getAppId();
     }
 }
