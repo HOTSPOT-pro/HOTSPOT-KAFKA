@@ -8,7 +8,6 @@ import java.util.UUID;
 
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -18,48 +17,69 @@ import hotspot.worker.consumer.usage.domain.UsageLuaResult;
 import hotspot.worker.consumer.usage.schema.UsageAlertEvent;
 import hotspot.worker.consumer.usage.schema.UsageEvent;
 import hotspot.worker.consumer.usage.support.TimeKey;
-import hotspot.worker.outbox.infrastructure.NotificationOutboxEventJpaRepository;
 import hotspot.worker.outbox.infrastructure.entity.NotificationOutboxEventEntity;
+import hotspot.worker.outbox.infrastructure.entity.UsageAppliedEventLogEntity;
 
 @Service
-@Transactional
 public class UsageAlertOutboxAppender {
 
     private static final String AGGREGATE_TYPE = "user-alert";
     private static final String EVENT_TYPE = "USAGE_THRESHOLD";
-    private static final ZoneId ALERT_TIME_ZONE = ZoneId.of("Asia/Seoul");
+    private static final ZoneId ZONE_KST = ZoneId.of("Asia/Seoul");
 
-    private final NotificationOutboxEventJpaRepository outboxRepository;
     private final ObjectMapper objectMapper;
     private final StringRedisTemplate redis;
 
+    // 알림 페이로드 직렬화와 지표 조회용 의존성을 주입받는다.
     public UsageAlertOutboxAppender(
-            NotificationOutboxEventJpaRepository outboxRepository,
             ObjectMapper objectMapper,
             StringRedisTemplate redis
     ) {
-        this.outboxRepository = outboxRepository;
         this.objectMapper = objectMapper;
         this.redis = redis;
     }
 
-    // 사용량 처리 결과를 알림 이벤트로 변환해 Outbox에 저장한다.
-    public void append(UsageEvent source, UsageLuaResult result) {
-        List<OutboxEntry> entries = buildOutboxEntries(source, result);
-        for (OutboxEntry entry : entries) {
-            outboxRepository.save(
-                    new NotificationOutboxEventEntity(
-                            UUID.randomUUID(),
-                            AGGREGATE_TYPE,
-                            entry.aggregateId(),
-                            entry.type(),
-                            toJson(entry.payload())
-                    )
-            );
+    // Lua 결과를 기반으로 알림 outbox 엔티티 목록을 생성한다.
+    public List<NotificationOutboxEventEntity> buildOutboxEntities(UsageEvent source, UsageLuaResult result) {
+        if (result.duplicate()) {
+            return List.of();
         }
+        List<OutboxEntry> entries = buildOutboxEntries(source, result);
+        List<NotificationOutboxEventEntity> entities = new ArrayList<>(entries.size());
+        for (OutboxEntry entry : entries) {
+            entities.add(new NotificationOutboxEventEntity(
+                    UUID.randomUUID(),
+                    AGGREGATE_TYPE,
+                    entry.aggregateId(),
+                    entry.type(),
+                    toJson(entry.payload())
+            ));
+        }
+        return entities;
     }
 
-    // 임계치 발화 결과(개인/가족/선물)별 Outbox 엔트리를 만든다.
+    // 사용량 반영 로그 엔티티를 생성한다.
+    public UsageAppliedEventLogEntity buildAppliedLogEntity(UsageEvent source, UsageLuaResult result) {
+        if (result.duplicate()) {
+            return null;
+        }
+        return new UsageAppliedEventLogEntity(
+                source.eventId(),
+                source.subId(),
+                source.familyId(),
+                source.appId(),
+                LocalDateTime.ofInstant(source.occurredAt(), ZONE_KST),
+                TimeKey.yyyymm(source.occurredAt(), ZONE_KST),
+                TimeKey.yyyymmdd(source.occurredAt(), ZONE_KST),
+                result.bytes(),
+                result.giftTake(),
+                result.planTake(),
+                result.familyTake(),
+                toJson(result.giftAllocations())
+        );
+    }
+
+    // 요금제/가족풀/선물 임계치 발화 결과를 outbox 엔트리로 변환한다.
     private List<OutboxEntry> buildOutboxEntries(UsageEvent source, UsageLuaResult result) {
         List<OutboxEntry> entries = new ArrayList<>();
 
@@ -114,7 +134,7 @@ public class UsageAlertOutboxAppender {
         return entries;
     }
 
-    // 공통 메타 정보와 계산된 사용량 지표를 담아 알림 페이로드를 만든다.
+    // 단일 알림 이벤트 페이로드를 구성한다.
     private UsageAlertEvent buildEvent(
             UsageEvent source,
             String alertType,
@@ -136,29 +156,29 @@ public class UsageAlertOutboxAppender {
                 metrics.providedAmount(),
                 metrics.usedPercent(),
                 metrics.usedAmount(),
-                LocalDateTime.ofInstant(source.occurredAt(), ALERT_TIME_ZONE)
+                LocalDateTime.ofInstant(source.occurredAt(), ZONE_KST)
         );
     }
 
-    // 개인 요금제 기준 제공량/사용률/사용량을 읽어온다.
+    // 요금제 한도/사용량 지표를 Redis에서 조회한다.
     private UsageMetrics readPlanMetrics(UsageEvent source, int usedPercent) {
-        String yyyymm = TimeKey.yyyymm(source.occurredAt(), ALERT_TIME_ZONE);
+        String yyyymm = TimeKey.yyyymm(source.occurredAt(), ZONE_KST);
         long provided = readHashLong("limit:sub:" + source.subId(), "plan_limit");
         long used = readHashLong("usage:sub:" + source.subId() + ":" + yyyymm, "plan_used");
         return toMetrics(provided, used, usedPercent);
     }
 
-    // 가족 공유풀 기준 제공량/사용률/사용량을 읽어온다.
+    // 가족풀 한도/사용량 지표를 Redis에서 조회한다.
     private UsageMetrics readFamilyMetrics(UsageEvent source, int usedPercent) {
-        String yyyymm = TimeKey.yyyymm(source.occurredAt(), ALERT_TIME_ZONE);
+        String yyyymm = TimeKey.yyyymm(source.occurredAt(), ZONE_KST);
         long provided = readHashLong("limit:family:" + source.familyId(), "family_limit");
         long used = readHashLong("usage:family:" + source.familyId() + ":" + yyyymm, "family_used");
         return toMetrics(provided, used, usedPercent);
     }
 
-    // 선물 데이터 기준 제공량/사용률/사용량을 읽어온다.
+    // 선물 한도/사용량 지표를 Redis에서 조회한다.
     private UsageMetrics readGiftMetrics(UsageEvent source, String giftId, int usedPercent) {
-        String yyyymm = TimeKey.yyyymm(source.occurredAt(), ALERT_TIME_ZONE);
+        String yyyymm = TimeKey.yyyymm(source.occurredAt(), ZONE_KST);
         String limitKey = "limit:gift:" + source.subId() + ":" + giftId + ":" + yyyymm;
         String usageKey = "usage:gift:" + source.subId() + ":" + giftId + ":" + yyyymm;
         long provided = readHashLong(limitKey, "gift_limit");
@@ -166,7 +186,7 @@ public class UsageAlertOutboxAppender {
         return toMetrics(provided, used, usedPercent);
     }
 
-    // 원시 byte 값을 알림용 문자열 포맷으로 변환한다.
+    // 원시 지표를 알림용 출력 포맷으로 정규화한다.
     private UsageMetrics toMetrics(long providedRaw, long usedRaw, int usedPercentRaw) {
         long provided = Math.max(0L, providedRaw);
         long used = Math.max(0L, usedRaw);
@@ -181,12 +201,13 @@ public class UsageAlertOutboxAppender {
         );
     }
 
+    // 잔여율을 사용률로 변환한다.
     private int usedPercentFromRemaining(int remainingPctRaw) {
         int remainingPct = Math.max(0, Math.min(100, remainingPctRaw));
         return 100 - remainingPct;
     }
 
-    // Redis Hash 필드를 long으로 읽고, 값이 없으면 0을 반환한다.
+    // Redis HASH 필드를 long 값으로 조회한다.
     private long readHashLong(String key, String field) {
         Object raw = redis.opsForHash().get(key, field);
         if (raw == null) {
@@ -199,12 +220,12 @@ public class UsageAlertOutboxAppender {
         return Long.parseLong(value);
     }
 
-    // Outbox payload 객체를 JSON 문자열로 직렬화한다.
+    // 페이로드 객체를 JSON 문자열로 직렬화한다.
     private String toJson(Object payload) {
         try {
             return objectMapper.writeValueAsString(payload);
         } catch (JsonProcessingException e) {
-            throw new IllegalStateException("Failed to serialize outbox payload", e);
+            throw new IllegalStateException("Failed to serialize payload", e);
         }
     }
 
