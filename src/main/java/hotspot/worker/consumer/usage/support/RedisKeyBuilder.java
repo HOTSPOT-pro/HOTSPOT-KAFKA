@@ -4,17 +4,16 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.List;
 
-/**
- * usage Lua 실행용 Redis 키를 규약대로 생성하는 빌더
- */
+// usage Lua 실행에 필요한 Redis 키/접두어를 생성하는 빌더다.
 public final class RedisKeyBuilder {
     private final ZoneId zone;
 
+    // 키 생성 시 사용할 기준 시간대를 주입받는다.
     public RedisKeyBuilder(ZoneId zone) {
         this.zone = zone;
     }
 
-    // Lua KEYS와 접두사 파라미터 묶음
+    // Lua KEYS와 ARGV 조합에 필요한 파생 값을 묶는다.
     public record Keys(
             List<String> keys,
             String yyyymm,
@@ -25,7 +24,7 @@ public final class RedisKeyBuilder {
     ) {
     }
 
-    // 이벤트 기준으로 Lua KEYS/ARGV 구성값을 만듦
+    // 이벤트 정보를 기준으로 Lua 실행에 필요한 키/접두어를 생성한다.
     public Keys build(long subId, long familyId, String eventId, Instant occurredAt) {
         String yyyymm = TimeKey.yyyymm(occurredAt, zone);
         String yyyymmdd = TimeKey.yyyymmdd(occurredAt, zone);
@@ -47,6 +46,7 @@ public final class RedisKeyBuilder {
         String notifyPlanDayKey = "notify:sub:" + subId + ":" + yyyymmdd;
         String notifyFamilyMonKey = "notify:family:" + familyId + ":" + yyyymm;
         String dedupKey = "dedup:evt:" + eventId;
+        String resultKey = "result:evt:" + eventId;
 
         List<String> keys = List.of(
                 limitSubKey,
@@ -63,7 +63,8 @@ public final class RedisKeyBuilder {
                 notifyPlanMonKey,
                 notifyPlanDayKey,
                 notifyFamilyMonKey,
-                dedupKey
+                dedupKey,
+                resultKey
         );
 
         String giftLimitPrefix = "limit:gift:" + subId + ":";
