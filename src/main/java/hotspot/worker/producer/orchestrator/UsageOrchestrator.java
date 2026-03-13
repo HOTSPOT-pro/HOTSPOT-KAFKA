@@ -21,8 +21,6 @@ public class UsageOrchestrator {
 
     public void process(List<UsageEvent> events) {
 
-        log.info("Total events received: {}", events.size());
-
         Set<String> approved =
                 validationRepository.validateAndCheck(events);
 
@@ -30,8 +28,6 @@ public class UsageOrchestrator {
                 events.stream()
                         .filter(e -> approved.contains(e.eventId()))
                         .toList();
-
-        log.info("Approved events: {}", finalEvents.size());
 
         // Kafka Produce
         for (UsageEvent event : finalEvents) {

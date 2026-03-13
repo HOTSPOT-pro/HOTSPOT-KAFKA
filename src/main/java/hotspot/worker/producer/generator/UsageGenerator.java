@@ -2,6 +2,7 @@ package hotspot.worker.producer.generator;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.ThreadLocalRandom;
 
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.stereotype.Component;
@@ -33,15 +34,13 @@ public class UsageGenerator {
     private static final String FAMILY_SUB_SET_KEY = "idx:family:subs";
 
     private static final int MIN_USAGE_KB = 50;
-    private static final int MAX_USAGE_KB = 100000;
+    private static final int MAX_USAGE_KB = 500;
     private static final int EVENT_SIZE = 5000;
 
 
     public void produceEvent() {
 
         List<UsageEvent> events = generateFixedEvents();
-
-        log.info("Generated events: {}", events.size());
 
         orchestrator.process(events);
     }
@@ -58,14 +57,16 @@ public class UsageGenerator {
                             .get(SUB_FAMILY_IDX_KEY, String.valueOf(subId));
 
             if (familyObj == null) {
-                log.warn("Family mapping not found for subId={}", subId);
                 continue;
             }
 
             long familyId = Long.parseLong(familyObj.toString());
 
+            int usageKb = ThreadLocalRandom.current()
+                    .nextInt(MIN_USAGE_KB, MAX_USAGE_KB + 1);
+
             events.add(
-                    UsageEvent.create(subId, familyId, MAX_USAGE_KB)
+                    UsageEvent.create(subId, familyId, usageKb)
             );
         }
 
