@@ -3,6 +3,7 @@
   <b>공유는 여기서, 차단은 저기서? NO!!</b>
 </p>
 <p align="center"><b>가족 데이터 공유 + 사용 제어, 흩어진 기능을 하나의 통합 서비스로</b></p>
+<p align="center"><b>디지털 페어런팅의 시작, HotSpot</b></p>
 
 </br>
 
@@ -10,11 +11,27 @@
 </br>
 
 ## 📝 Overview
-**HotSpot Worker**는 Kafka 기반 **실시간 사용량 이벤트 파이프라인**을 구성하며,  
-Producer 단계에서 Redis Lua로 정책/한도 시뮬레이션을 수행해 **불필요한 이벤트를 사전 차단**하고,  
-Consumer 단계에서는 **사용량 반영 + 임계치 계산 + 알림 Outbox 적재를 단일 원자 연산으로 처리**해 정합성을 보장합니다.  
-또한 **PostgreSQL(SoT)과 Redis(실시간 상태 레이어) 간의 불일치를 최소화**하기 위해 CDC (Debezium)+Outbox로 상태 동기화를 수행하며,  
-고도화 단계에서는 **RDB를 진실의 근원으로 두고 Redis를 연산/조회 레이어로 분리** (Dual-write / Reconcile / Fallback)하는 아키텍처로 확장합니다.
+**HotSpot Worker**는 Kafka 기반의 **실시간 사용량 집계 파이프라인**을 담당합니다.
+
+단순히 사용량만 누적하는 것이 아니라, 이벤트 한 건을 처리할 때 다음을 함께 다룹니다.
+
+- 중복 이벤트 방지
+- 선물 / 개인 / 가족 데이터 차감
+- 월 / 일 / 앱별 사용량 반영
+- 임계치(50 / 30 / 10 / 소진) 판정
+- 중복 알림 방지
+- 알림 Outbox 생성
+- 장애 대비를 위한 DB 로그 적재
+
+이를 위해 HotSpot Worker는 **두 단계 Lua 구조**를 사용합니다.
+
+- **Producer 단계**: `usage_valid_batch.lua`
+  - 정책과 한도를 미리 검증해 **유효한 이벤트만 Kafka에 적재**
+- **Consumer 단계**: `usage_atomic.lua`
+  - 사용량 반영, 임계치 계산, 결과 캐시 저장을 **원자적으로 처리**
+
+또한 Redis만으로 끝내지 않고, 처리 결과를 비동기 Writer가 PostgreSQL에 적재하여  
+**durable log + 월 집계 + Redis 복구 기반**까지 확보한 구조입니다.
 
 </br>
 
@@ -460,7 +477,7 @@ sequenceDiagram
 </br>
 
 <a id="evolution"></a>
-## 🔁 Redis-only의 한계와 RDB 기반 정합성 아키텍처 전환 (고도화 단계 진행 예정)
+## 🔁 Redis-only의 한계와 정합성 아키텍처 전환
 
 1차 MVP에서는 **Redis 단독**으로 사용량 반영/정책 판정/알림 Outbox까지 처리해 기능을 완성했습니다.  
 다만 Redis-only 구조는 운영 단계에서 아래 2가지 리스크가 본질적으로 남습니다.
@@ -483,133 +500,281 @@ sequenceDiagram
 
 </br>
 
+---
+
+</br>
+
 <a id="evolution-goal"></a>
-## 🎯 목표: RDB를 진실의 근원으로, Redis는 빠른 연산/조회 레이어로
+## 🔁 Redis 이중화 전략과 정합성 보장
 
-PostgreSQL을 **SoT(Source of Truth)** 로 두고,
-Redis는 다음 역할에 집중합니다.
+HotSpot은 Redis를 **실시간 상태 레이어**로 사용하지만, Redis만을 진실의 근원으로 두지는 않습니다.  
+실시간 처리의 성능은 Redis가 담당하고, durable 저장과 복구 근거는 PostgreSQL과 Main DB가 담당하는 구조입니다.
 
-- **실시간 연산/판정(저지연)**: Lua 기반 원자 업데이트, 임계치 계산, Outbox 적재
-- **빠른 조회(캐시/대시보드)**: 가족/구성원 잔여량, 최근 사용량, 임계치 상태 등
-- **Fallback**: Redis miss/장애 시 RDB 조회로 서비스 연속성 확보
+핵심 원칙은 다음과 같습니다.
 
-핵심 전략은 아래 3가지입니다.
+- **Redis**: 실시간 반영, 임계치 판정, 빠른 조회
+- **PostgreSQL**: durable log, 집계, 복구 근거
+- **Main DB**: 월 기준값과 정책의 원천
 
-1. **Dual-Write(이중 기록)**: 처리 결과를 Redis와 RDB 모두에 기록  
-2. **Reconciliation(정합성 맞춤)**: RDB를 기준으로 Redis를 주기적으로 덮어씀 
-3. **Read Fallback**: Redis miss 시 RDB로 조회 후 캐시 워밍
+즉, Redis의 실시간성은 유지하되 장애와 유실에 대비할 수 있도록 **DB 기반 복구 구조를 함께 설계**했습니다.
 
-</br>
+<br/>
 
-<a id="evolution-path"></a>
-## 🔎 데이터 흐름: Write Path / Read Path / Reconcile Path
+### 아키텍처 개요
 
-### 1) Write Path (실시간 처리)
+구조는 크게 네 축으로 나뉩니다.
 
-```mermaid
-sequenceDiagram
-  autonumber
-  participant K as Kafka usage-events
-  participant UC as UsageEventConsumer
-  participant R as Redis Lua
-  participant RS as Redis State (usage/notify/dedup)
-  participant O as Redis Stream outbox usage-alerts v1
-  participant DB as PostgreSQL SoT
-  participant LOG as usage_event_log
-  participant SNAP as usage_snapshot_monthly
+#### 1) 실시간 집계 축
+- Kafka `usage-events`
+- `usage_atomic.lua`
+- Redis usage / notify / gift 상태 반영
+- `result:evt:{eventId}` 저장
 
-  K->>UC: poll usage event
-  UC->>R: eval Lua (atomic)
+#### 2) 비동기 DB 적재 축
+- `AppliedResultBuffer`
+- `UsageAppliedLogWriter`
+- `usage_applied_event_log`
+- `notification_outbox_event`
+- DB commit 후 Kafka ack
 
-  R->>RS: dedup check/set (eventId TTL)
-  R->>RS: update usage state
-  R->>RS: threshold calc + notify state update
-  alt threshold hit
-    R->>O: XADD outbox alert
-  end
+#### 3) Durable / 집계 축
+- append-only 원본 로그 `usage_applied_event_log`
+- 집계 잡 `UsageAggregateProjectionJob`
+- 사용자 월 집계 테이블 `sub_usage_monthly_aggregate`
 
-  par RDB write (SoT)
-    UC->>DB: INSERT usage_event_log (eventId UNIQUE)
-    DB->>LOG: append-only store
-    UC->>DB: UPSERT usage_snapshot_monthly (subId, month PK)
-    DB->>SNAP: update snapshot
-  end
-```
+#### 4) 복구 / 기준값 축
+- Main DB가 월 기준값 원천 유지
+- Redis 유실 또는 불일치 시
+  - 기준값 조회
+  - 월 집계 또는 원본 로그 조회
+  - Redis overwrite 방식으로 복구
 
-`usage-events` 소비 시, Redis Lua로 원자 처리 후 RDB에도 반영합니다.
+<br/>
 
-- **Redis**
-  - 빠른 잔여량 갱신
-  - 임계치 계산
-  - OutBox 적재
-- **RDB**
-  - **원본 이벤트(append-only)** 저장
-  - **월 스냅샷** 저장
+### 실시간 처리 흐름
 
-**설계 의도**  
-- Redis는 실시간 판정/조회를 위해 사용  
-- RDB는 감사/복구/정산/재생성을 위해 사용  
-- 원본 이벤트를 남겨야 Redis 오류/버그가 결과에 섞여도 대응 가능
+#### 1) Redis 즉시 반영
 
-</br>
+Consumer는 Kafka에서 `usage-events`를 읽고 `usage_atomic.lua`를 실행합니다.
 
-### 2) Read Path (조회)
+Lua는 Redis 내부에서 다음을 **원자적으로 처리**합니다.
+
+- dedup 검사 및 설정
+- 사용량 차감 / 분배
+- usage 키 갱신
+- notify 상태 갱신
+- gift 사용 반영
+- `result:evt:{eventId}` 저장
+
+이후 Java는 Lua 결과를 받아 내부 queue에 적재합니다.
+
+핵심은 **Redis 반영은 즉시 수행되지만, DB 저장과 Kafka ack은 뒤에서 비동기적으로 처리된다**는 점입니다.
+
+#### 2) 비동기 DB Writer
 
 ```mermaid
 sequenceDiagram
   autonumber
-  participant API as Query API
-  participant RS as Redis State (usage cache)
-  participant DB as PostgreSQL SoT
-  participant SNAP as usage_snapshot_monthly
+  participant Q as AppliedResultBuffer
+  participant W as UsageAppliedLogWriter
+  participant DB as PostgreSQL
+  participant K as Kafka Ack
 
-  API->>RS: GET/HGET usage state
-  alt Redis hit
-    RS-->>API: return cached state (low latency)
-  else Redis miss or Redis down
-    API->>DB: SELECT snapshot or aggregate
-    DB->>SNAP: read canonical state
-    DB-->>API: return truth state
-    opt cache warm (optional)
-      API->>RS: SET/HSET warm cache (TTL or month key)
-    end
+  Q->>W: applied result dequeue
+  W->>W: batch 구성
+  W->>DB: BEGIN
+  W->>DB: bulk insert usage_applied_event_log
+  W->>DB: bulk insert notification_outbox_event
+  alt commit 성공
+    W->>DB: COMMIT
+    W->>K: partition별 연속 성공 offset까지 ack
+  else commit 실패
+    W->>DB: ROLLBACK
+    W-->>W: no-ack
   end
 ```
 
-조회는 기본적으로 Redis를 먼저 보고, miss 또는 Redis 장애 시 RDB로 fallback합니다.
+`UsageAppliedLogWriter`는 내부 queue의 결과를 배치로 모아 DB에 적재합니다.
 
-(1) **Redis hit**
-  - 즉시 응답(저지연)
+같은 트랜잭션에서 다음을 bulk insert 합니다.
 
-(2) **Redis miss / 장애**
-   - RDB 조회 → 응답
+- `usage_applied_event_log`
+- `notification_outbox_event`
 
-</br>
+그리고 **commit 성공 후에만 Kafka ack**를 수행합니다.
 
-### 3) Reconcile Path (정합성 교정)
+즉, HotSpot에서 각 단계의 의미는 다음과 같이 구분됩니다.
+
+- **Lua 성공** = Redis 반영 완료
+- **Queue 적재 완료** = durable 저장 대기
+- **DB commit 성공** = durable 저장 완료
+- **Kafka ack 성공** = 처리 완료 확정
+
+<br/>
+
+### 왜 `result:evt:{eventId}` 가 필요한가
 
 ```mermaid
 sequenceDiagram
   autonumber
-  participant REC as Reconcile Job
-  participant DB as PostgreSQL SoT
-  participant SNAP as usage_snapshot_monthly
-  participant RS as Redis State (usage/notify)
+  participant K as Kafka(usage-events)
+  participant C as UsageBatchConsumeWorker
+  participant R as Redis(usage_atomic.lua)
+  participant Q as AppliedResultBuffer
+  participant W as UsageAppliedLogWriter
+  participant DB as PostgreSQL
 
-  REC->>DB: query canonical snapshot (window/month)
-  DB->>SNAP: fetch aggregates
-  DB-->>REC: return canonical state
-
-  REC->>RS: overwrite Redis state (SET/HSET)
-  REC->>RS: refresh TTL and notify state if needed
+  K->>C: 동일 usage-event 재전달
+  C->>R: EVAL usage_atomic.lua(eventId)
+  R->>R: dedup:evt:{eventId} 확인
+  alt 이미 처리된 이벤트
+    R->>R: result:evt:{eventId} 조회
+    R-->>C: 기존 applied result 반환
+  else 신규 이벤트
+    R->>R: usage / notify / gift 반영
+    R->>R: result:evt:{eventId} 저장
+    R-->>C: 신규 applied result 반환
+  end
+  C->>Q: 결과 envelope 적재
+  Q->>W: batch flush
+  W->>DB: usage_applied_event_log / notification_outbox_event 저장
+  W->>DB: COMMIT
 ```
 
-Redis와 RDB 사이의 불일치를 제거하기 위해 **주기적으로 RDB 기준으로 Redis를 덮어씁니다.**
+이 구조에서는 아래 상황이 발생할 수 있습니다.
 
-- 주기: 운영이 허용하는 기준으로 설정
-- 대상: `usage:*`, `notify:*` 등 조회/판정에 영향을 주는 핵심 상태
-- 방식: RDB 스냅샷/집계 결과를 Redis에 overwrite + 필요 시 만료 갱신
+1. Lua 성공
+2. Redis 사용량 반영 완료
+3. DB batch insert 실패
+4. Kafka ack 미수행
+5. 동일 메시지 재소비
 
-**설계 의도**  
-- Redis는 빠르지만 진실은 아니다.  
-- drift는 발생한다는 전제를 두고, drift를 **주기적으로 제거**한다.
+이때 Redis는 이미 반영되어 있으므로, 재소비 시 다시 사용량을 증가시키면 안 됩니다.
+
+그래서 HotSpot은 dedup 키만 저장하는 것이 아니라, **이벤트 적용 결과 자체를 `result:evt:{eventId}`에 함께 저장**합니다.
+
+재시도 시에는 다음 흐름으로 복구합니다.
+
+- dedup 확인
+- Redis 재반영 없이
+- 이전 결과를 그대로 반환
+- DB 저장만 다시 시도
+
+즉, `result:evt`는 **Redis 중복 반영 없이 durable 저장과 ack만 복구하기 위한 핵심 장치**입니다.
+
+<br/>
+
+### Redis 정합성 복구 원칙
+
+HotSpot은 Redis와 DB의 정합성을 **이벤트마다 DB 값을 다시 Redis에 증분 반영해서 맞추지 않습니다.**
+
+그렇게 하면 이미 Redis에서 처리된 사용량이 다시 더해져 **중복 반영**이 발생할 수 있기 때문입니다.
+
+그래서 복구는 항상 아래 원칙을 따릅니다.
+
+- DB는 delta 재반영의 근거가 아니다
+- DB는 **현재 정답 상태를 재계산하는 근거**다
+- 복구는 증분 반영이 아니라 **overwrite 방식**이다
+
+#### 복구 흐름
+
+```mermaid
+sequenceDiagram
+  autonumber
+  participant O as Operator / Scheduler
+  participant J as RedisTargetRebuildJob
+  participant M as Main DB
+  participant AGG as sub_usage_monthly_aggregate
+  participant LOG as usage_applied_event_log
+  participant R as Redis
+
+  O->>J: targetType, targetId, yyyymm 전달
+  J->>M: 월 기준값 조회
+  J->>AGG: 대상 월 집계 조회
+  alt aggregate만으로 충분한 경우
+    AGG-->>J: 집계 상태 반환
+  else tail 보정 필요
+    J->>LOG: 미반영 또는 보정 로그 조회
+    LOG-->>J: 보정 로그 반환
+  end
+  J->>J: 현재 정답 상태 재계산
+  J->>R: usage / notify / gift 키 overwrite
+  J-->>O: rebuild 완료
+```
+
+1. 불일치 대상 식별
+   - `subId + yyyymm`
+   - 또는 `familyId + yyyymm`
+2. Main DB에서 월 기준값 조회
+3. `sub_usage_monthly_aggregate` 또는 `usage_applied_event_log` 기준으로 현재 상태 재계산
+4. Redis usage / notify / gift 키 overwrite
+5. 서비스 복구
+
+즉, Redis는 다시 누적하는 것이 아니라 **정답 상태를 통째로 덮어써서 맞춥니다.**
+
+<br/>
+
+### Redis 유실 시 재구축 전략
+
+Redis 전체 유실이 발생하면 다음 데이터를 조합해 재구축합니다.
+
+#### 1) Main DB의 월 기준값
+- 개인 요금제 제공량
+- 가족 공유 데이터 제공량
+- gift 지급 / 만료 상태
+
+#### 2) `sub_usage_monthly_aggregate`
+- 사용자별 월 누적 상태
+
+#### 3) 필요 시 `usage_applied_event_log`
+- aggregate 미반영 구간 보정
+- tail 보정
+
+#### 복구 순서
+1. 기준값 로드
+2. 사용자 월 집계 로드
+3. 사용자별 Redis 상태 재적재
+4. family 상태는 sub aggregate 합산 또는 로그 집계로 복원
+5. 필요 시 tail 보정
+6. 서비스 복구
+
+즉, aggregate는 **빠른 복구용 상태 저장소**, 원본 로그는 **정확성 보정용 근거**로 사용됩니다.
+
+<br/>
+
+### Ack와 Backpressure 처리 원칙
+
+Redis 반영과 Kafka ack는 같은 시점이 아닙니다.  
+따라서 ack 전에도 consumer는 다음 이벤트를 계속 받을 수 있습니다.
+
+이때 무제한으로 계속 읽게 두면 다음 문제가 생길 수 있습니다.
+
+- 내부 queue 적체
+- 메모리 증가
+- 미커밋 구간 확대
+- 장애 시 재처리 범위 확대
+
+그래서 HotSpot은 다음 원칙을 둡니다.
+
+#### 1) Bounded Queue
+- 내부 queue 크기를 제한
+- 적체 시 무한 확장 방지
+
+#### 2) Pause / Resume
+- queue가 임계치에 도달하면 partition pause
+- writer가 queue를 비우면 resume
+- heartbeat 유지를 위해 poll은 계속 수행
+
+#### 3) Contiguous Ack
+같은 partition에서는 **연속으로 성공한 마지막 offset까지만 commit** 가능합니다.
+
+예를 들어 아래와 같은 상태라면
+
+- offset 10 성공
+- offset 11 미완료
+- offset 12 성공
+
+12까지 commit하면 안 됩니다.  
+따라서 writer는 **연속 성공한 offset까지만 ack** 하도록 설계합니다.
+
+<br/>
