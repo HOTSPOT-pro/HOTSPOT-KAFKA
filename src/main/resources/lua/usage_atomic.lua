@@ -16,6 +16,7 @@
 -- 13: notify:sub:{subId}:{yyyymmdd}
 -- 14: notify:family:{familyId}:{yyyymm}
 -- 15: dedup:evt:{eventId}
+-- 16: result:evt:{eventId}
 
 -- -------------------------
 -- ARGV
@@ -35,6 +36,7 @@
 -- 13: subId
 -- 14: familyId
 -- 15: day3HourlyField (00_used, 03_used ... 21_used)
+-- 16: ttlResult
 
 local bytes = tonumber(ARGV[1])
 local appId = ARGV[2]
@@ -55,6 +57,7 @@ local occurredAt = ARGV[12]
 local subId = tonumber(ARGV[13])
 local familyId = tonumber(ARGV[14])
 local day3HourlyField = ARGV[15]
+local ttlResult = tonumber(ARGV[16])
 local INF = 9007199254740991
 local DAILY_PLAN_LIMIT_KB = 1048576
 
@@ -65,7 +68,13 @@ end
 
 -- dedup 키가 있으면 동일 이벤트이므로 "사용량 반영 + 알림 판단"을 하지 않고 DUP로 종료한다.
 if redis.call('EXISTS', KEYS[15]) == 1 then
-  return { "DUP" }
+  local cached = redis.call('GET', KEYS[16])
+  if cached then
+    redis.call('EXPIRE', KEYS[15], ttlDedup)
+    redis.call('EXPIRE', KEYS[16], ttlResult)
+    return { "DUP", cached }
+  end
+  return { "DUP_MISSING_RESULT" }
 end
 
 -- 총량(quota) 대비 사용량(used)으로 임계치(50/30/10/0/101)와 잔여(rem), 잔여율(pct)을 계산한다.
@@ -145,6 +154,7 @@ end
 local remain = bytes
 local gift_take_total = 0
 local fired_gifts = {}
+local gift_allocations = {}
 
 -- 해당 구독자의 월 선물 인덱스(ZSET)에서 선물 ID 목록을 가져온다.
 local gift_ids = redis.call('ZRANGE', KEYS[4], 0, -1)
@@ -170,6 +180,7 @@ for i = 1, #gift_ids do
     remain = remain - take
     gift_take_total = gift_take_total + take
     gift_used = gift_used + take
+    table.insert(gift_allocations, { giftId = gid, usedAmount = take })
 
     redis.call('HINCRBY', gift_usage_key, 'gift_used', take)
     redis.call('EXPIRE', gift_usage_key, ttlMon)
@@ -178,7 +189,6 @@ for i = 1, #gift_ids do
     local th, rem2, pct = threshold(gift_quota, gift_used)
     local nkey = giftNotifyPrefix .. gid .. ":" .. yyyymm
     local fire, last = update_notify(nkey, th)
-
     if fire == 1 then
       table.insert(fired_gifts, {
         giftId = gid, th = th, rem = rem2, pct = pct, last = last
@@ -256,19 +266,37 @@ local fam_fire, fam_last = update_notify(KEYS[14], fam_th)
 -- 이번 이벤트 처리 완료를 dedup 키로 기록해 중복 처리를 방지한다.
 redis.call('SET', KEYS[15], '1', 'EX', ttlDedup)
 
+local result_payload = cjson.encode({
+  duplicate = false,
+  eventId = eventId,
+  subId = subId,
+  familyId = familyId,
+  appId = tonumber(appId),
+  occurredAt = occurredAt,
+  yyyymm = string.sub(KEYS[5], -6),
+  yyyymmdd = string.sub(KEYS[6], -8),
+  usageAmount = bytes,
+  giftUsed = gift_take_total,
+  planUsed = plan_take,
+  familyUsed = family_take,
+  giftAllocations = gift_allocations,
+  bytes = bytes,
+  giftTake = gift_take_total,
+  planTake = plan_take,
+  familyTake = family_take,
+  overflow = overflow
+})
+redis.call('SET', KEYS[16], result_payload, 'EX', ttlResult)
+
 -- 최종 결과(차감 분배, 임계치 발화 여부/상태, 발화된 선물 목록)를 배열로 반환한다.
 return {
   "OK",
   bytes,
   gift_take_total, plan_take, family_take, overflow,
-
   pool_used_new, (family_limit_total - pool_used_new),
-
   (mon_family_used + family_take), family_member_limit,
-
   plan_fire, plan_th, plan_rem2, plan_pct, plan_last,
-
   fam_fire, fam_th, fam_rem2, fam_pct, fam_last,
-
-  cjson.encode(fired_gifts)
+  cjson.encode(fired_gifts),
+  cjson.encode(gift_allocations)
 }
