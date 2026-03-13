@@ -24,6 +24,13 @@ spring:
       - classpath:redis.yml
       - classpath:kafka.yml
 
+app:
+  usage:
+    db-writer:
+      queue-capacity: 20000
+      batch-size: 200
+      batch-wait-ms: 200
+
 ---
 spring:
   config:
