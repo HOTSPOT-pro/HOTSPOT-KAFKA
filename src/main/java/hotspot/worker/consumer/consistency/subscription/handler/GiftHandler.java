@@ -1,5 +1,6 @@
 package hotspot.worker.consumer.consistency.subscription.handler;
 
+import hotspot.worker.producer.schema.AppType;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -11,7 +12,7 @@ import lombok.RequiredArgsConstructor;
 @RequiredArgsConstructor
 public class GiftHandler implements SubscriptionEventHandler {
 
-    private static final long GIFT_APP_ID = 20L;
+    private static final long GIFT_APP_ID = AppType.GIFT_DATA.getAppId();
     private final SubscriptionLuaExecutor executor;
 
     @Override

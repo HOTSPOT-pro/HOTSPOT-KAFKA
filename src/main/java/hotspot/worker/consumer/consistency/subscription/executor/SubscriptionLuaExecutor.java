@@ -108,7 +108,9 @@ public class SubscriptionLuaExecutor {
                 "limit:gift:" + receiverSubId + ":" + giftId + ":" + yyyyMM,
                 "idx:gift:" + receiverSubId + ":" + yyyyMM,
                 "usage:sub:" + giverSubId + ":" + yyyyMM,
-                "usage:sub:" + giverSubId + ":" + yyyyMMDD
+                "usage:sub:" + giverSubId + ":" + yyyyMMDD,
+                "usage:app:" + giverSubId + ":" + yyyyMM,
+                "usage:app:" + giverSubId + ":" + yyyyMMDD
         );
 
         redisTemplate.execute(
