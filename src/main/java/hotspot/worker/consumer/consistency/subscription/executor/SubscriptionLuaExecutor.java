@@ -99,7 +99,8 @@ public class SubscriptionLuaExecutor {
             long giftLimitBytes,
             long giverSubId,
             String yyyyMMDD,
-            long giftAmountBytes
+            long giftAmountBytes,
+            long appId
     ) {
 
         List<String> keys = List.of(
@@ -107,7 +108,9 @@ public class SubscriptionLuaExecutor {
                 "limit:gift:" + receiverSubId + ":" + giftId + ":" + yyyyMM,
                 "idx:gift:" + receiverSubId + ":" + yyyyMM,
                 "usage:sub:" + giverSubId + ":" + yyyyMM,
-                "usage:sub:" + giverSubId + ":" + yyyyMMDD
+                "usage:sub:" + giverSubId + ":" + yyyyMMDD,
+                "usage:app:" + giverSubId + ":" + yyyyMM,
+                "usage:app:" + giverSubId + ":" + yyyyMMDD
         );
 
         redisTemplate.execute(
@@ -118,7 +121,8 @@ public class SubscriptionLuaExecutor {
                 String.valueOf(giftAmountBytes),
                 "plan_used",
                 yyyyMM,
-                yyyyMMDD
+                yyyyMMDD,
+                String.valueOf(appId)
         );
     }
 
