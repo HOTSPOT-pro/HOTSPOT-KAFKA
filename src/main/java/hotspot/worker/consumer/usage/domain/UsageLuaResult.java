@@ -2,9 +2,7 @@ package hotspot.worker.consumer.usage.domain;
 
 import java.util.List;
 
-/**
- * usage_atomic.lua 실행 결과 DTO
- */
+// usage_atomic.lua 실행 결과를 담는 DTO다.
 public record UsageLuaResult(
         boolean duplicate,
         long bytes,
@@ -20,6 +18,7 @@ public record UsageLuaResult(
         int familyThreshold,
         long familyRemainingBytes,
         int familyRemainingPct,
-        List<GiftFire> giftFires
+        List<GiftFire> giftFires,
+        List<GiftAllocation> giftAllocations
 ) {
 }
