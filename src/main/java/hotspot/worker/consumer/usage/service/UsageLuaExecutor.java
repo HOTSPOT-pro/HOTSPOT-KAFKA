@@ -134,7 +134,7 @@ public class UsageLuaExecutor {
                 }
             }
             return new UsageLuaResult(
-                    false,
+                    true,
                     node.path("bytes").asLong(0),
                     node.path("giftTake").asLong(0),
                     node.path("planTake").asLong(0),
