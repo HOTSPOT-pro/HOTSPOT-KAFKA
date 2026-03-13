@@ -1,11 +1,11 @@
 package hotspot.worker.consumer.consistency.subscription.handler;
 
-import hotspot.worker.producer.schema.AppType;
 import org.springframework.stereotype.Component;
 
 import com.fasterxml.jackson.databind.JsonNode;
 
 import hotspot.worker.consumer.consistency.subscription.executor.SubscriptionLuaExecutor;
+import hotspot.worker.producer.schema.AppType;
 import lombok.RequiredArgsConstructor;
 
 @Component
