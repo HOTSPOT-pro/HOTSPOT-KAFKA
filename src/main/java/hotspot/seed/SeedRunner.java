@@ -1,6 +1,7 @@
 package hotspot.seed;
 
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
@@ -8,7 +9,11 @@ import java.time.format.DateTimeFormatterBuilder;
 import java.time.format.DateTimeParseException;
 import java.time.temporal.ChronoField;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Random;
 import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
@@ -31,6 +36,10 @@ import hotspot.worker.consumer.usage.support.TimeKey;
 public class SeedRunner {
 
     private static final int PIPELINE_BATCH_SIZE = 1000;
+    private static final List<Long> HISTORICAL_USAGE_SUB_IDS =
+            List.of(1000001L, 1000002L, 1000003L, 1000004L, 1000005L, 1000006L);
+    private static final DateTimeFormatter YYYYMM = DateTimeFormatter.ofPattern("yyyyMM");
+    private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.ofPattern("yyyyMMdd");
 
     public static void main(String[] args) {
         // SeedRunner 단독 실행 진입점
@@ -66,17 +75,26 @@ public class SeedRunner {
 
             redis.delete("idx:sub:family");
 
+            System.out.println("Seed Initialization done.");
+
+
             seedPlanLimit(jdbc, redis);
             seedFamilyLimit(jdbc, redis);
             seedFamilySubLimitPriorityAndIndexes(jdbc, redis);
             seedPresentsAndDonorUsage(jdbc, redis);
+
+            System.out.println("Limit Seed done.");
+
+            seedHistoricalUsage(jdbc, redis);
+
+            System.out.println("Usage History Seed done.");
 
             seedBlockRepeat(jdbc, redis);
             seedBlockTime(jdbc, redis);
             seedBlockImmediate(jdbc, redis);
             seedBlockApp(jdbc, redis);
 
-            System.out.println("Seed done.");
+            System.out.println("Block Policy Seed done.");
         };
     }
 
@@ -279,6 +297,234 @@ public class SeedRunner {
             long provideSubId,
             long dataAmountKb,
             LocalDateTime createdTime
+    ) {
+    }
+
+    // 과거 6개월(현재 달 포함) 범위의 일별/월별 사용량 키를 랜덤으로 적재한다.
+    private void seedHistoricalUsage(JdbcTemplate jdbc, StringRedisTemplate redis) {
+        Map<Long, Long> familyBySubId = resolveFamilyBySubId(jdbc);
+        List<String> appIds = resolveUsageAppIds(jdbc);
+
+        LocalDate today = LocalDate.now(KST);
+        LocalDate startDate = today.withDayOfMonth(1).minusMonths(5);
+        LocalDate endDate = today.minusDays(1);
+        if (endDate.isBefore(startDate)) {
+            return;
+        }
+
+        List<HistoricalUsageRow> rows = new ArrayList<>();
+        for (long subId : HISTORICAL_USAGE_SUB_IDS) {
+            Long familyId = familyBySubId.get(subId);
+            Random random = new Random(20260314L + subId);
+            for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+                long totalUsed = randomBetween(random, 40_000L, 1_500_000L);
+                long giftUsed = 0L;
+                long familyUsed = 0L;
+                if (familyId != null) {
+                    long familyLimit = Math.max(0L, totalUsed - giftUsed);
+                    familyUsed = random.nextInt(100) < 45 ? randomBetween(random, 0L, familyLimit / 3) : 0L;
+                }
+                long overflowUsed = 0L;
+                long overflowLimit = Math.max(0L, totalUsed - giftUsed - familyUsed);
+                if (random.nextInt(100) < 5) {
+                    overflowUsed = randomBetween(random, 0L, overflowLimit / 20);
+                }
+                long planUsed = totalUsed - giftUsed - familyUsed - overflowUsed;
+
+                rows.add(new HistoricalUsageRow(
+                        subId,
+                        familyId,
+                        date,
+                        totalUsed,
+                        planUsed,
+                        familyUsed,
+                        giftUsed,
+                        overflowUsed,
+                        buildAppUsage(appIds, totalUsed, random),
+                        build3HourlyUsage(totalUsed, random)
+                ));
+            }
+        }
+
+        writeInBatches(redis, rows, PIPELINE_BATCH_SIZE, (conn, row) -> {
+            String yyyymm = row.date().format(YYYYMM);
+            String yyyymmdd = row.date().format(YYYYMMDD);
+
+            String subMonKey = "usage:sub:" + row.subId() + ":" + yyyymm;
+            String subDayKey = "usage:sub:" + row.subId() + ":" + yyyymmdd;
+
+            incrSubUsage(conn, subMonKey, row);
+            incrSubUsage(conn, subDayKey, row);
+
+            if (row.familyId() != null && row.familyUsed() > 0) {
+                String familyMonKey = "usage:family:" + row.familyId() + ":" + yyyymm;
+                String familyDayKey = "usage:family:" + row.familyId() + ":" + yyyymmdd;
+                conn.hIncrBy(b(familyMonKey), b("family_used"), row.familyUsed());
+                conn.hIncrBy(b(familyDayKey), b("family_used"), row.familyUsed());
+            }
+
+            String appMonKey = "usage:app:" + row.subId() + ":" + yyyymm;
+            String appDayKey = "usage:app:" + row.subId() + ":" + yyyymmdd;
+            for (Map.Entry<String, Long> appUsage : row.appUsages().entrySet()) {
+                conn.zIncrBy(b(appMonKey), appUsage.getValue(), b(appUsage.getKey()));
+                conn.zIncrBy(b(appDayKey), appUsage.getValue(), b(appUsage.getKey()));
+            }
+
+            String hourlyDayKey = "usage:3hourly:" + row.subId() + ":" + yyyymmdd;
+            for (Map.Entry<String, Long> bucket : row.hourlyUsages().entrySet()) {
+                conn.hIncrBy(b(hourlyDayKey), b(bucket.getKey()), bucket.getValue());
+            }
+        });
+    }
+
+    private void incrSubUsage(RedisConnection conn, String key, HistoricalUsageRow row) {
+        conn.hIncrBy(b(key), b("total_used"), row.totalUsed());
+        conn.hIncrBy(b(key), b("plan_used"), row.planUsed());
+        conn.hIncrBy(b(key), b("member_family_used"), row.familyUsed());
+        conn.hIncrBy(b(key), b("gift_used"), row.giftUsed());
+        if (row.overflowUsed() > 0) {
+            conn.hIncrBy(b(key), b("overflow_used"), row.overflowUsed());
+        }
+    }
+
+    private Map<Long, Long> resolveFamilyBySubId(JdbcTemplate jdbc) {
+        String sql = """
+                SELECT sub_id, family_id
+                FROM family_sub
+                WHERE sub_id IN (1000001,1000002,1000003,1000004,1000005,1000006)
+                ORDER BY family_id
+                """;
+        List<FamilyMappingRow> rows = jdbc.query(sql, (rs, rowNum) ->
+                new FamilyMappingRow(rs.getLong("sub_id"), rs.getLong("family_id"))
+        );
+
+        Map<Long, Long> bySubId = new HashMap<>();
+        for (FamilyMappingRow row : rows) {
+            bySubId.putIfAbsent(row.subId(), row.familyId());
+        }
+        return bySubId;
+    }
+
+    private List<String> resolveUsageAppIds(JdbcTemplate jdbc) {
+        String sql = """
+                SELECT app_blocked_service_id
+                FROM app_blocked_service
+                WHERE is_deleted = false
+                ORDER BY app_blocked_service_id
+                """;
+        List<String> appIds = jdbc.query(sql, (rs, rowNum) -> rs.getString("app_blocked_service_id"));
+        if (appIds.isEmpty()) {
+            throw new IllegalStateException("No app ids found in app_blocked_service");
+        }
+        return appIds;
+    }
+
+    private Map<String, Long> buildAppUsage(List<String> appIds, long totalUsed, Random random) {
+        List<String> orderedApps = new ArrayList<>(appIds);
+        java.util.Collections.shuffle(orderedApps, random);
+
+        List<Double> weights = new ArrayList<>(orderedApps.size());
+        for (int i = 0; i < orderedApps.size(); i++) {
+            double baseWeight;
+            if (i == 0) {
+                baseWeight = 24.0;
+            } else if (i == 1) {
+                baseWeight = 16.0;
+            } else if (i < 5) {
+                baseWeight = 8.0;
+            } else {
+                baseWeight = 3.0;
+            }
+            double jitter = 0.8 + random.nextDouble() * 0.5;
+            weights.add(baseWeight * jitter);
+        }
+
+        return distributeByWeights(orderedApps, weights, totalUsed, 1L);
+    }
+
+    private Map<String, Long> build3HourlyUsage(long totalUsed, Random random) {
+        List<String> fields = List.of(
+                "00_used", "03_used", "06_used", "09_used",
+                "12_used", "15_used", "18_used", "21_used"
+        );
+
+        // 새벽은 낮고, 점심~저녁에 피크가 오도록 기본 가중치를 준다.
+        List<Double> baseWeights = List.of(7.0, 3.0, 6.0, 14.0, 16.0, 17.0, 23.0, 14.0);
+        List<Double> jitteredWeights = new ArrayList<>(baseWeights.size());
+        for (double baseWeight : baseWeights) {
+            double jitter = 0.85 + random.nextDouble() * 0.3;
+            jitteredWeights.add(baseWeight * jitter);
+        }
+
+        return distributeByWeights(fields, jitteredWeights, totalUsed, 1L);
+    }
+
+    private Map<String, Long> distributeByWeights(
+            List<String> keys,
+            List<Double> weights,
+            long total,
+            long minPerKey
+    ) {
+        if (keys.isEmpty()) {
+            return Map.of();
+        }
+
+        long safeTotal = Math.max(0L, total);
+        long baseEach = (minPerKey > 0 && safeTotal >= minPerKey * keys.size()) ? minPerKey : 0L;
+        long minTotal = baseEach * keys.size();
+        long remaining = safeTotal - minTotal;
+
+        Map<String, Long> distributed = new LinkedHashMap<>();
+        for (String key : keys) {
+            distributed.put(key, baseEach);
+        }
+
+        double weightSum = 0.0;
+        for (double weight : weights) {
+            weightSum += Math.max(0.0001, weight);
+        }
+
+        for (int i = 0; i < keys.size(); i++) {
+            String key = keys.get(i);
+            double weight = Math.max(0.0001, weights.get(i));
+            long additional;
+            if (i == keys.size() - 1 || weightSum <= 0.0) {
+                additional = remaining;
+            } else {
+                additional = Math.round((double) remaining * weight / weightSum);
+                if (additional > remaining) {
+                    additional = remaining;
+                }
+            }
+            distributed.put(key, distributed.get(key) + additional);
+            remaining -= additional;
+            weightSum -= weight;
+        }
+
+        return distributed;
+    }
+
+    private long randomBetween(Random random, long minInclusive, long maxInclusive) {
+        if (maxInclusive <= minInclusive) {
+            return minInclusive;
+        }
+        return minInclusive + (long) (random.nextDouble() * (maxInclusive - minInclusive + 1));
+    }
+
+    private record FamilyMappingRow(long subId, long familyId) {
+    }
+
+    private record HistoricalUsageRow(
+            long subId,
+            Long familyId,
+            LocalDate date,
+            long totalUsed,
+            long planUsed,
+            long familyUsed,
+            long giftUsed,
+            long overflowUsed,
+            Map<String, Long> appUsages,
+            Map<String, Long> hourlyUsages
     ) {
     }
 
