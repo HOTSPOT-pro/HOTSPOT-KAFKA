@@ -7,7 +7,7 @@ server:
 
 spring:
   application:
-    name: backend
+    name: hotspot-worker
 
   task:
     scheduling:
@@ -30,6 +30,24 @@ app:
       queue-capacity: 20000
       batch-size: 200
       batch-wait-ms: 200
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: prometheus,health,info,metrics
+  endpoint:
+    health:
+      probes:
+        enabled: true
+      show-details: always
+  prometheus:
+    metrics:
+      export:
+        enabled: true
+  metrics:
+    tags:
+      application: ${spring.application.name}
 
 ---
 spring:
