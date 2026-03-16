@@ -24,6 +24,16 @@ spring:
       - classpath:redis.yml
       - classpath:kafka.yml
 
+app:
+  usage:
+    db-writer:
+      queue-capacity: 20000
+      batch-size: 200
+      batch-wait-ms: 200
+      max-retries: 2
+      paused-retry-wait-ms: 10000
+      listener-id: usage-events-listener
+
 management:
   endpoints:
     web:

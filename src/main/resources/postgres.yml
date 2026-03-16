@@ -19,6 +19,14 @@ spring:
         dialect: org.hibernate.dialect.PostgreSQLDialect
         default_batch_fetch_size: 100
 
+app:
+  usage-db:
+    datasource:
+      driver-class-name: org.postgresql.Driver
+      url: jdbc:postgresql://${POSTGRES_BATCH_HOST:localhost}:${POSTGRES_BATCH_PORT:5432}/${POSTGRES_BATCH_DATABASE}
+      username: ${POSTGRES_BATCH_USER}
+      password: ${POSTGRES_BATCH_PASSWORD}
+
 ---
 spring:
   config:
@@ -32,7 +40,7 @@ spring:
     properties:
       hibernate:
         format_sql: true
-        show_sql: true
+        show_sql: false
 
 ---
 spring:
@@ -47,4 +55,4 @@ spring:
     properties:
       hibernate:
         format_sql: true
-        show_sql: true
+        show_sql: false

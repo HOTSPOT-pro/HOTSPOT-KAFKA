@@ -15,6 +15,7 @@ import hotspot.worker.consumer.usage.schema.UsageEvent;
 @Configuration
 public class KafkaConsumerConfig {
 
+    // usage 이벤트 역직렬화를 포함한 ConsumerFactory를 생성한다.
     @Bean
     public ConsumerFactory<String, UsageEvent> usageConsumerFactory(
             KafkaProperties props,
@@ -27,6 +28,7 @@ public class KafkaConsumerConfig {
         );
     }
 
+    // 수동 ACK/동시성/재시도 백오프를 적용한 usage 리스너 팩토리를 구성한다.
     @Bean
     public ConcurrentKafkaListenerContainerFactory<String, UsageEvent>
     usageKafkaListenerContainerFactory(
@@ -39,6 +41,7 @@ public class KafkaConsumerConfig {
         factory.setConcurrency(6);
         factory.getContainerProperties()
                 .setAckMode(ContainerProperties.AckMode.MANUAL);
+        factory.getContainerProperties().setAsyncAcks(true);
 
         ExponentialBackOff backOff =
                 new ExponentialBackOff(500L, 2.0);
