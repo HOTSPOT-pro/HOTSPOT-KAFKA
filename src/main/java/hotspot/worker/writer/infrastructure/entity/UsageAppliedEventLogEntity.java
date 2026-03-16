@@ -1,4 +1,4 @@
-package hotspot.worker.outbox.infrastructure.entity;
+package hotspot.worker.writer.infrastructure.entity;
 
 import java.time.LocalDateTime;
 
