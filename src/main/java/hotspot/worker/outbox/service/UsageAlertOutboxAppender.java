@@ -18,7 +18,7 @@ import hotspot.worker.consumer.usage.schema.UsageAlertEvent;
 import hotspot.worker.consumer.usage.schema.UsageEvent;
 import hotspot.worker.consumer.usage.support.TimeKey;
 import hotspot.worker.outbox.infrastructure.entity.NotificationOutboxEventEntity;
-import hotspot.worker.outbox.infrastructure.entity.UsageAppliedEventLogEntity;
+import hotspot.worker.writer.infrastructure.entity.UsageAppliedEventLogEntity;
 
 @Service
 public class UsageAlertOutboxAppender {
