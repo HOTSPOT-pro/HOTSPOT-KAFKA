@@ -19,6 +19,7 @@ public class UsageEventsConsumer {
 
     // 수신한 usage 이벤트를 처리하고 성공 시에만 수동 ACK를 수행한다.
     @KafkaListener(
+            id = "usage-events-listener",
             topics = "${app.topics.usage-events}",
             groupId = "${app.consumer-groups.usage}",
             containerFactory = "usageKafkaListenerContainerFactory"
