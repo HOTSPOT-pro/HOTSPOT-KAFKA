@@ -1,10 +1,11 @@
 spring:
   data:
     redis:
-      host: ${REDIS_HOST:localhost}
-      port: ${REDIS_PORT:6379}
       password: ${REDIS_PASSWORD}
       timeout: 30s
+      sentinel:
+        master: ${REDIS_SENTINEL_MASTER:mymaster}
+        nodes: ${REDIS_SENTINEL_NODES}
       lettuce:
         shutdown-timeout: 100ms
         pool:
