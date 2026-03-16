@@ -1,4 +1,4 @@
-package hotspot.worker.outbox.infrastructure;
+package hotspot.worker.writer.infrastructure;
 
 import java.sql.Timestamp;
 import java.util.List;
@@ -7,7 +7,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import hotspot.worker.outbox.infrastructure.entity.UsageAppliedEventLogEntity;
+import hotspot.worker.writer.infrastructure.entity.UsageAppliedEventLogEntity;
 
 @Component
 public class UsageAppliedEventLogJdbcWriter {
