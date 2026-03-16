@@ -23,9 +23,9 @@ app:
   usage-db:
     datasource:
       driver-class-name: org.postgresql.Driver
-      url: jdbc:postgresql://${POSTGRES_HOST:localhost}:${POSTGRES_PORT:5432}/${USAGE_DB_DATABASE:usage_db}
-      username: ${USAGE_DB_USER:${POSTGRES_USER}}
-      password: ${USAGE_DB_PASSWORD:${POSTGRES_PASSWORD}}
+      url: jdbc:postgresql://${POSTGRES_BATCH_HOST:localhost}:${POSTGRES_BATCH_PORT:5432}/${POSTGRES_BATCH_DATABASE:hotspot}
+      username: ${POSTGRES_BATCH_USER:hotspot}
+      password: ${POSTGRES_BATCH_PASSWORD:hotspot1!}
 
 ---
 spring:
