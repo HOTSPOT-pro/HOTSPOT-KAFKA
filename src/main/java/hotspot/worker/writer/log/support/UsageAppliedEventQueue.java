@@ -1,4 +1,4 @@
-package hotspot.worker.outbox.service;
+package hotspot.worker.writer.log.support;
 
 import java.util.Collection;
 import java.util.concurrent.BlockingQueue;
@@ -7,6 +7,8 @@ import java.util.concurrent.TimeUnit;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
+
+import hotspot.worker.writer.log.dto.UsageAppliedEnvelope;
 
 @Component
 public class UsageAppliedEventQueue {
