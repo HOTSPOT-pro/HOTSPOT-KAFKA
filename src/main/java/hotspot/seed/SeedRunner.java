@@ -3,6 +3,7 @@ package hotspot.seed;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.YearMonth;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeFormatterBuilder;
@@ -302,6 +303,7 @@ public class SeedRunner {
 
     // 과거 6개월(현재 달 포함) 범위의 일별/월별 사용량 키를 랜덤으로 적재한다.
     private void seedHistoricalUsage(JdbcTemplate jdbc, StringRedisTemplate redis) {
+        Map<Long, SubPlanProfile> planProfileBySubId = resolvePlanProfileBySubId(jdbc);
         Map<Long, Long> familyBySubId = resolveFamilyBySubId(jdbc);
         List<String> appIds = resolveUsageAppIds(jdbc);
 
@@ -312,37 +314,58 @@ public class SeedRunner {
             return;
         }
 
+        Map<YearMonth, List<LocalDate>> datesByMonth = new LinkedHashMap<>();
+        for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
+            YearMonth yearMonth = YearMonth.from(date);
+            datesByMonth.computeIfAbsent(yearMonth, ignored -> new ArrayList<>()).add(date);
+        }
+
         List<HistoricalUsageRow> rows = new ArrayList<>();
         for (long subId : HISTORICAL_USAGE_SUB_IDS) {
             Long familyId = familyBySubId.get(subId);
+            SubPlanProfile planProfile = requirePlanProfile(planProfileBySubId, subId);
             Random random = new Random(20260314L + subId);
-            for (LocalDate date = startDate; !date.isAfter(endDate); date = date.plusDays(1)) {
-                long totalUsed = randomBetween(random, 40_000L, 1_500_000L);
-                long giftUsed = 0L;
-                long familyUsed = 0L;
-                if (familyId != null) {
-                    long familyLimit = Math.max(0L, totalUsed - giftUsed);
-                    familyUsed = random.nextInt(100) < 45 ? randomBetween(random, 0L, familyLimit / 3) : 0L;
-                }
-                long overflowUsed = 0L;
-                long overflowLimit = Math.max(0L, totalUsed - giftUsed - familyUsed);
-                if (random.nextInt(100) < 5) {
-                    overflowUsed = randomBetween(random, 0L, overflowLimit / 20);
-                }
-                long planUsed = totalUsed - giftUsed - familyUsed - overflowUsed;
 
-                rows.add(new HistoricalUsageRow(
-                        subId,
-                        familyId,
-                        date,
-                        totalUsed,
-                        planUsed,
-                        familyUsed,
-                        giftUsed,
-                        overflowUsed,
-                        buildAppUsage(appIds, totalUsed, random),
-                        build3HourlyUsage(totalUsed, random)
-                ));
+            for (Map.Entry<YearMonth, List<LocalDate>> entry : datesByMonth.entrySet()) {
+                List<LocalDate> monthDates = entry.getValue();
+                YearMonth yearMonth = entry.getKey();
+                List<Long> dailyTotals = buildDailyTotalsForPlan(
+                        planProfile.planId(),
+                        planProfile.planLimitKb(),
+                        yearMonth,
+                        monthDates.size(),
+                        random
+                );
+
+                for (int i = 0; i < monthDates.size(); i++) {
+                    LocalDate date = monthDates.get(i);
+                    long totalUsed = dailyTotals.get(i);
+                    long giftUsed = 0L;
+                    long familyUsed = 0L;
+                    if (familyId != null) {
+                        long familyLimit = Math.max(0L, totalUsed - giftUsed);
+                        familyUsed = random.nextInt(100) < 40 ? randomBetween(random, 0L, familyLimit / 4) : 0L;
+                    }
+                    long overflowUsed = 0L;
+                    long overflowLimit = Math.max(0L, totalUsed - giftUsed - familyUsed);
+                    if (random.nextInt(100) < 3) {
+                        overflowUsed = randomBetween(random, 0L, overflowLimit / 25);
+                    }
+                    long planUsed = totalUsed - giftUsed - familyUsed - overflowUsed;
+
+                    rows.add(new HistoricalUsageRow(
+                            subId,
+                            familyId,
+                            date,
+                            totalUsed,
+                            planUsed,
+                            familyUsed,
+                            giftUsed,
+                            overflowUsed,
+                            buildAppUsage(appIds, totalUsed, random),
+                            build3HourlyUsage(totalUsed, random)
+                    ));
+                }
             }
         }
 
@@ -403,6 +426,133 @@ public class SeedRunner {
             bySubId.putIfAbsent(row.subId(), row.familyId());
         }
         return bySubId;
+    }
+
+    private Map<Long, SubPlanProfile> resolvePlanProfileBySubId(JdbcTemplate jdbc) {
+        String sql = """
+                SELECT s.sub_id AS sub_id,
+                       s.plan_id AS plan_id,
+                       p.plan_data_amount AS plan_limit_kb
+                FROM subscription s
+                JOIN plan p
+                  ON p.plan_id = s.plan_id
+                WHERE s.sub_id IN (1000001,1000002,1000003,1000004,1000005,1000006)
+                """;
+        List<SubPlanProfileRow> rows = jdbc.query(sql, (rs, rowNum) ->
+                new SubPlanProfileRow(
+                        rs.getLong("sub_id"),
+                        rs.getLong("plan_id"),
+                        rs.getLong("plan_limit_kb")
+                )
+        );
+        Map<Long, SubPlanProfile> bySubId = new HashMap<>();
+        for (SubPlanProfileRow row : rows) {
+            bySubId.putIfAbsent(row.subId(), new SubPlanProfile(row.planId(), row.planLimitKb()));
+        }
+        return bySubId;
+    }
+
+    private SubPlanProfile requirePlanProfile(Map<Long, SubPlanProfile> planProfileBySubId, long subId) {
+        SubPlanProfile profile = planProfileBySubId.get(subId);
+        if (profile == null) {
+            throw new IllegalStateException("Plan limit not found for sub_id=" + subId);
+        }
+        if (profile.planId() == 1L) {
+            if (profile.planLimitKb() != -1L) {
+                throw new IllegalStateException("Unlimited plan expected for sub_id=" + subId + ", plan_id=1");
+            }
+            return profile;
+        }
+        if (profile.planLimitKb() <= 0L) {
+            throw new IllegalStateException("Invalid plan limit for sub_id=" + subId + ", plan_id=" + profile.planId());
+        }
+        return profile;
+    }
+
+    private List<Long> buildDailyTotalsForPlan(
+            long planId,
+            long planLimitKb,
+            YearMonth yearMonth,
+            int dayCount,
+            Random random
+    ) {
+        if (dayCount <= 0) {
+            return List.of();
+        }
+        if (planId == 1L || planLimitKb == -1L) {
+            return buildUnlimitedDailyTotals(dayCount, random);
+        }
+        if (planId == 5L) {
+            return buildDailyPlanTotals(planLimitKb, dayCount, random);
+        }
+        if (planId == 2L || planId == 3L || planId == 4L) {
+            return buildMonthlyPlanTotals(planLimitKb, yearMonth, dayCount, random);
+        }
+        return buildMonthlyPlanTotals(planLimitKb, yearMonth, dayCount, random);
+    }
+
+    private List<Long> buildUnlimitedDailyTotals(int dayCount, Random random) {
+        List<Long> totals = new ArrayList<>(dayCount);
+        long monthBase = randomBetween(random, 400_000L, 2_000_000L);
+        for (int i = 0; i < dayCount; i++) {
+            long dayUsed = jitterAround(monthBase, 0.20d, random);
+            totals.add(Math.max(50_000L, dayUsed));
+        }
+        return totals;
+    }
+
+    private List<Long> buildDailyPlanTotals(long dailyLimitKb, int dayCount, Random random) {
+        long minDaily = Math.max(1L, Math.round(dailyLimitKb * 0.5d));
+        long maxDaily = Math.max(minDaily, dailyLimitKb);
+        long baseMin = Math.max(minDaily, Math.round(dailyLimitKb * 0.65d));
+        long baseMax = Math.max(baseMin, Math.round(dailyLimitKb * 0.85d));
+        long monthBase = randomBetween(random, baseMin, baseMax);
+        List<Long> totals = new ArrayList<>(dayCount);
+        for (int i = 0; i < dayCount; i++) {
+            long dayUsed = jitterAround(monthBase, 0.10d, random);
+            totals.add(clamp(dayUsed, minDaily, maxDaily));
+        }
+        return totals;
+    }
+
+    private List<Long> buildMonthlyPlanTotals(long monthlyLimitKb, YearMonth yearMonth, int dayCount, Random random) {
+        long proratedLimit = proratedMonthlyLimit(monthlyLimitKb, yearMonth, dayCount);
+        long monthlyTarget = randomBetween(
+                random,
+                Math.max(1L, Math.round(proratedLimit * 0.5d)),
+                Math.max(1L, proratedLimit)
+        );
+
+        List<String> dayKeys = new ArrayList<>(dayCount);
+        List<Double> weights = new ArrayList<>(dayCount);
+        for (int i = 0; i < dayCount; i++) {
+            dayKeys.add(Integer.toString(i));
+            weights.add(0.9d + random.nextDouble() * 0.2d);
+        }
+        Map<String, Long> distributed = distributeByWeights(dayKeys, weights, monthlyTarget, 0L);
+
+        List<Long> totals = new ArrayList<>(dayCount);
+        for (int i = 0; i < dayCount; i++) {
+            totals.add(distributed.get(Integer.toString(i)));
+        }
+        return totals;
+    }
+
+    private long proratedMonthlyLimit(long monthlyLimitKb, YearMonth yearMonth, int coveredDays) {
+        int daysInMonth = yearMonth.lengthOfMonth();
+        if (daysInMonth <= 0 || coveredDays <= 0) {
+            return 1L;
+        }
+        return Math.max(1L, Math.round((double) monthlyLimitKb * coveredDays / daysInMonth));
+    }
+
+    private long jitterAround(long base, double ratio, Random random) {
+        double factor = 1.0d - ratio + (random.nextDouble() * ratio * 2.0d);
+        return Math.max(0L, Math.round(base * factor));
+    }
+
+    private long clamp(long value, long min, long max) {
+        return Math.max(min, Math.min(max, value));
     }
 
     private List<String> resolveUsageAppIds(JdbcTemplate jdbc) {
@@ -509,6 +659,12 @@ public class SeedRunner {
             return minInclusive;
         }
         return minInclusive + (long) (random.nextDouble() * (maxInclusive - minInclusive + 1));
+    }
+
+    private record SubPlanProfileRow(long subId, long planId, long planLimitKb) {
+    }
+
+    private record SubPlanProfile(long planId, long planLimitKb) {
     }
 
     private record FamilyMappingRow(long subId, long familyId) {
