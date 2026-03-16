@@ -10,8 +10,8 @@ import org.springframework.stereotype.Service;
 import hotspot.worker.consumer.usage.domain.UsageLuaResult;
 import hotspot.worker.consumer.usage.schema.UsageEvent;
 import hotspot.worker.outbox.service.UsageAlertOutboxAppender;
-import hotspot.worker.outbox.service.UsageAppliedEnvelope;
-import hotspot.worker.outbox.service.UsageAppliedEventQueue;
+import hotspot.worker.writer.log.dto.UsageAppliedEnvelope;
+import hotspot.worker.writer.log.support.UsageAppliedEventQueue;
 
 @Service
 public class UsageEventHandler {
