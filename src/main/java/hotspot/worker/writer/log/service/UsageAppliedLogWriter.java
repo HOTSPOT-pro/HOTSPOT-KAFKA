@@ -21,7 +21,7 @@ public class UsageAppliedLogWriter {
 
     private static final Logger log = LoggerFactory.getLogger(UsageAppliedLogWriter.class);
     private static final int QUEUE_WARN_THRESHOLD = 5000;
-    private static final long PERF_LOG_EVERY = 1000L;
+    private static final long PERF_LOG_EVERY = 10_000L;
 
     private final UsageAppliedBatchCollector batchCollector;
     private final UsageAppliedBatchOrchestrator persistenceOrchestrator;

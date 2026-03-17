@@ -24,7 +24,7 @@ import hotspot.worker.consumer.usage.support.RedisKeyBuilder;
 public class UsageLuaExecutor {
 
     private static final Logger log = LoggerFactory.getLogger(UsageLuaExecutor.class);
-    private static final long PERF_LOG_EVERY = 1000L;
+    private static final long PERF_LOG_EVERY = 10_000L;
     private static final long TTL_MON_SECONDS = 15_552_000L;
     private static final long TTL_DAY_SECONDS = 15_552_000L;
     private static final long TTL_NOTIFY_SECONDS = 2_678_400L;

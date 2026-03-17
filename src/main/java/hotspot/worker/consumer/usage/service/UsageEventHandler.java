@@ -17,7 +17,7 @@ import hotspot.worker.writer.log.support.UsageAppliedEventQueue;
 public class UsageEventHandler {
 
     private static final Logger log = LoggerFactory.getLogger(UsageEventHandler.class);
-    private static final long PERF_LOG_EVERY = 1000L;
+    private static final long PERF_LOG_EVERY = 10_000L;
 
     private final UsageLuaExecutor lua;
     private final UsageAlertOutboxAppender outboxAppender;
