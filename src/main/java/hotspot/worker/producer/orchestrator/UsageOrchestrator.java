@@ -21,8 +21,11 @@ public class UsageOrchestrator {
 
     public void process(List<UsageEvent> events) {
 
-        Set<String> approved =
-                validationRepository.validateAndCheck(events);
+        long start = System.currentTimeMillis();
+
+        Set<String> approved = validationRepository.validateAndCheck(events);
+
+        long afterValidation = System.currentTimeMillis();
 
         List<UsageEvent> finalEvents =
                 events.stream()
@@ -33,5 +36,14 @@ public class UsageOrchestrator {
         for (UsageEvent event : finalEvents) {
             kafkaProducer.sendUsage(event);
         }
+
+        long end = System.currentTimeMillis();
+
+        log.info("usage process completed. total={}, approved={}, validationMs={}, publishMs={}, totalMs={}",
+                events.size(),
+                finalEvents.size(),
+                afterValidation - start,
+                end - afterValidation,
+                end - start);
     }
 }
