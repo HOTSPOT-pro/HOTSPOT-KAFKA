@@ -2,7 +2,10 @@ package hotspot.worker.consumer.usage.service;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicLong;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Service;
@@ -20,6 +23,8 @@ import hotspot.worker.consumer.usage.support.RedisKeyBuilder;
 @Service
 public class UsageLuaExecutor {
 
+    private static final Logger log = LoggerFactory.getLogger(UsageLuaExecutor.class);
+    private static final long PERF_LOG_EVERY = 1000L;
     private static final long TTL_MON_SECONDS = 15_552_000L;
     private static final long TTL_DAY_SECONDS = 15_552_000L;
     private static final long TTL_NOTIFY_SECONDS = 2_678_400L;
@@ -30,6 +35,8 @@ public class UsageLuaExecutor {
     private final DefaultRedisScript<List> usageAtomicScript;
     private final RedisKeyBuilder keyBuilder;
     private final ObjectMapper om;
+    private final AtomicLong executedCount = new AtomicLong();
+    private final AtomicLong totalExecuteNanos = new AtomicLong();
 
     // Lua 실행과 결과 파싱에 필요한 의존성을 주입받는다.
     public UsageLuaExecutor(
@@ -46,6 +53,7 @@ public class UsageLuaExecutor {
 
     // usage 이벤트를 Lua 스크립트로 원자 처리하고 결과를 DTO로 변환한다.
     public UsageLuaResult execute(UsageEvent ev) {
+        long start = System.nanoTime();
         RedisKeyBuilder.Keys keysPack =
                 keyBuilder.build(ev.subId(), ev.familyId(), ev.eventId(), ev.occurredAt());
 
@@ -74,48 +82,55 @@ public class UsageLuaExecutor {
         List<Object> arr = (List<Object>) raw;
 
         String status = toStr(arr.get(0));
+        UsageLuaResult result;
         if ("INVALID_BYTES".equals(status)) {
-            return ignoredResult();
-        }
-        if ("DUP".equals(status)) {
+            result = ignoredResult();
+        } else if ("DUP".equals(status)) {
             if (arr.size() < 2 || toStr(arr.get(1)) == null || toStr(arr.get(1)).isBlank()) {
                 throw new IllegalStateException("Lua returned DUP without cached result payload");
             }
-            return parseCachedResult(toStr(arr.get(1)));
-        }
-        if ("DUP_MISSING_RESULT".equals(status)) {
+            result = parseCachedResult(toStr(arr.get(1)));
+        } else if ("DUP_MISSING_RESULT".equals(status)) {
             throw new IllegalStateException("Lua returned DUP but result cache key is missing");
-        }
-        if (!"OK".equals(status)) {
+        } else if (!"OK".equals(status)) {
             throw new IllegalStateException("Lua returned unexpected status: " + status);
+        } else {
+            long bytes = toLong(arr.get(1));
+            long giftTake = toLong(arr.get(2));
+            long planTake = toLong(arr.get(3));
+            long familyTake = toLong(arr.get(4));
+            long overflow = toLong(arr.get(5));
+            boolean planFire = toLong(arr.get(10)) == 1;
+            int planTh = (int) toLong(arr.get(11));
+            long planRem = toLong(arr.get(12));
+            int planPct = (int) toLong(arr.get(13));
+
+            boolean famFire = toLong(arr.get(15)) == 1;
+            int famTh = (int) toLong(arr.get(16));
+            long famRem = toLong(arr.get(17));
+            int famPct = (int) toLong(arr.get(18));
+
+            List<GiftFire> giftFires = parseGiftFires(toStr(arr.get(20)));
+            List<GiftAllocation> giftAllocations = parseGiftAllocations(toStr(arr.get(21)));
+
+            result = new UsageLuaResult(
+                    false,
+                    bytes, giftTake, planTake, familyTake, overflow,
+                    planFire, planTh, planRem, planPct,
+                    famFire, famTh, famRem, famPct,
+                    giftFires,
+                    giftAllocations
+            );
         }
 
-        long bytes = toLong(arr.get(1));
-        long giftTake = toLong(arr.get(2));
-        long planTake = toLong(arr.get(3));
-        long familyTake = toLong(arr.get(4));
-        long overflow = toLong(arr.get(5));
-        boolean planFire = toLong(arr.get(10)) == 1;
-        int planTh = (int) toLong(arr.get(11));
-        long planRem = toLong(arr.get(12));
-        int planPct = (int) toLong(arr.get(13));
-
-        boolean famFire = toLong(arr.get(15)) == 1;
-        int famTh = (int) toLong(arr.get(16));
-        long famRem = toLong(arr.get(17));
-        int famPct = (int) toLong(arr.get(18));
-
-        List<GiftFire> giftFires = parseGiftFires(toStr(arr.get(20)));
-        List<GiftAllocation> giftAllocations = parseGiftAllocations(toStr(arr.get(21)));
-
-        return new UsageLuaResult(
-                false,
-                bytes, giftTake, planTake, familyTake, overflow,
-                planFire, planTh, planRem, planPct,
-                famFire, famTh, famRem, famPct,
-                giftFires,
-                giftAllocations
-        );
+        long elapsedNanos = System.nanoTime() - start;
+        long count = executedCount.incrementAndGet();
+        long totalNanos = totalExecuteNanos.addAndGet(elapsedNanos);
+        if (count % PERF_LOG_EVERY == 0) {
+            long avgMicros = (totalNanos / count) / 1000L;
+            log.info("Lua 처리 성능 지표입니다. executed={}, avgMicros={}", count, avgMicros);
+        }
+        return result;
     }
 
     // DUP 결과에 포함된 캐시 JSON을 UsageLuaResult로 복원한다.
