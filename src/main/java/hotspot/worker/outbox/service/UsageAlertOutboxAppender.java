@@ -6,7 +6,6 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -28,18 +27,11 @@ public class UsageAlertOutboxAppender {
     private static final ZoneId ZONE_KST = ZoneId.of("Asia/Seoul");
 
     private final ObjectMapper objectMapper;
-    private final StringRedisTemplate redis;
 
-    // 알림 페이로드 직렬화와 지표 조회용 의존성을 주입받는다.
-    public UsageAlertOutboxAppender(
-            ObjectMapper objectMapper,
-            StringRedisTemplate redis
-    ) {
+    public UsageAlertOutboxAppender(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
-        this.redis = redis;
     }
 
-    // Lua 결과를 기반으로 알림 outbox 엔티티 목록을 생성한다.
     public List<NotificationOutboxEventEntity> buildOutboxEntities(UsageEvent source, UsageLuaResult result) {
         if (result.duplicate()) {
             return List.of();
@@ -58,7 +50,6 @@ public class UsageAlertOutboxAppender {
         return entities;
     }
 
-    // 사용량 반영 로그 엔티티를 생성한다.
     public UsageAppliedEventLogEntity buildAppliedLogEntity(UsageEvent source, UsageLuaResult result) {
         if (result.duplicate()) {
             return null;
@@ -79,14 +70,17 @@ public class UsageAlertOutboxAppender {
         );
     }
 
-    // 요금제/가족풀/선물 임계치 발화 결과를 outbox 엔트리로 변환한다.
     private List<OutboxEntry> buildOutboxEntries(UsageEvent source, UsageLuaResult result) {
         List<OutboxEntry> entries = new ArrayList<>();
 
         if (result.planFired()) {
             String aggregateId = "sub:" + source.subId();
             int usedPercent = usedPercentFromRemaining(result.planRemainingPct());
-            UsageMetrics metrics = readPlanMetrics(source, usedPercent);
+            UsageMetrics metrics = toMetrics(
+                    result.planProvidedAmount(),
+                    result.planUsedAmount(),
+                    usedPercent
+            );
             UsageAlertEvent event = buildEvent(
                     source,
                     "PLAN_REMAINING",
@@ -102,7 +96,11 @@ public class UsageAlertOutboxAppender {
         if (result.familyFired()) {
             String aggregateId = "family:" + source.familyId();
             int usedPercent = usedPercentFromRemaining(result.familyRemainingPct());
-            UsageMetrics metrics = readFamilyMetrics(source, usedPercent);
+            UsageMetrics metrics = toMetrics(
+                    result.familyProvidedAmount(),
+                    result.familyUsedAmount(),
+                    usedPercent
+            );
             UsageAlertEvent event = buildEvent(
                     source,
                     "FAMILY_POOL_REMAINING",
@@ -118,7 +116,11 @@ public class UsageAlertOutboxAppender {
         for (GiftFire giftFire : result.giftFires()) {
             String aggregateId = "gift:" + giftFire.giftId();
             int usedPercent = usedPercentFromRemaining(giftFire.pct());
-            UsageMetrics metrics = readGiftMetrics(source, giftFire.giftId(), usedPercent);
+            UsageMetrics metrics = toMetrics(
+                    giftFire.providedAmount(),
+                    giftFire.usedAmount(),
+                    usedPercent
+            );
             UsageAlertEvent event = buildEvent(
                     source,
                     "GIFT_REMAINING",
@@ -134,7 +136,6 @@ public class UsageAlertOutboxAppender {
         return entries;
     }
 
-    // 단일 알림 이벤트 페이로드를 구성한다.
     private UsageAlertEvent buildEvent(
             UsageEvent source,
             String alertType,
@@ -160,33 +161,6 @@ public class UsageAlertOutboxAppender {
         );
     }
 
-    // 요금제 한도/사용량 지표를 Redis에서 조회한다.
-    private UsageMetrics readPlanMetrics(UsageEvent source, int usedPercent) {
-        String yyyymm = TimeKey.yyyymm(source.occurredAt(), ZONE_KST);
-        long provided = readHashLong("limit:sub:" + source.subId(), "plan_limit");
-        long used = readHashLong("usage:sub:" + source.subId() + ":" + yyyymm, "plan_used");
-        return toMetrics(provided, used, usedPercent);
-    }
-
-    // 가족풀 한도/사용량 지표를 Redis에서 조회한다.
-    private UsageMetrics readFamilyMetrics(UsageEvent source, int usedPercent) {
-        String yyyymm = TimeKey.yyyymm(source.occurredAt(), ZONE_KST);
-        long provided = readHashLong("limit:family:" + source.familyId(), "family_limit");
-        long used = readHashLong("usage:family:" + source.familyId() + ":" + yyyymm, "family_used");
-        return toMetrics(provided, used, usedPercent);
-    }
-
-    // 선물 한도/사용량 지표를 Redis에서 조회한다.
-    private UsageMetrics readGiftMetrics(UsageEvent source, String giftId, int usedPercent) {
-        String yyyymm = TimeKey.yyyymm(source.occurredAt(), ZONE_KST);
-        String limitKey = "limit:gift:" + source.subId() + ":" + giftId + ":" + yyyymm;
-        String usageKey = "usage:gift:" + source.subId() + ":" + giftId + ":" + yyyymm;
-        long provided = readHashLong(limitKey, "gift_limit");
-        long used = readHashLong(usageKey, "gift_used");
-        return toMetrics(provided, used, usedPercent);
-    }
-
-    // 원시 지표를 알림용 출력 포맷으로 정규화한다.
     private UsageMetrics toMetrics(long providedRaw, long usedRaw, int usedPercentRaw) {
         long provided = Math.max(0L, providedRaw);
         long used = Math.max(0L, usedRaw);
@@ -201,26 +175,11 @@ public class UsageAlertOutboxAppender {
         );
     }
 
-    // 잔여율을 사용률로 변환한다.
     private int usedPercentFromRemaining(int remainingPctRaw) {
         int remainingPct = Math.max(0, Math.min(100, remainingPctRaw));
         return 100 - remainingPct;
     }
 
-    // Redis HASH 필드를 long 값으로 조회한다.
-    private long readHashLong(String key, String field) {
-        Object raw = redis.opsForHash().get(key, field);
-        if (raw == null) {
-            return 0L;
-        }
-        String value = String.valueOf(raw);
-        if (value.isBlank()) {
-            return 0L;
-        }
-        return Long.parseLong(value);
-    }
-
-    // 페이로드 객체를 JSON 문자열로 직렬화한다.
     private String toJson(Object payload) {
         try {
             return objectMapper.writeValueAsString(payload);
