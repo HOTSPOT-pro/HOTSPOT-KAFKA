@@ -100,6 +100,10 @@ public class UsageLuaExecutor {
             long planTake = toLong(arr.get(3));
             long familyTake = toLong(arr.get(4));
             long overflow = toLong(arr.get(5));
+            long planUsedAmount = toLong(arr.get(6));
+            long planProvidedAmount = toLong(arr.get(7));
+            long familyUsedAmount = toLong(arr.get(8));
+            long familyProvidedAmount = toLong(arr.get(9));
             boolean planFire = toLong(arr.get(10)) == 1;
             int planTh = (int) toLong(arr.get(11));
             long planRem = toLong(arr.get(12));
@@ -116,6 +120,8 @@ public class UsageLuaExecutor {
             result = new UsageLuaResult(
                     false,
                     bytes, giftTake, planTake, familyTake, overflow,
+                    planProvidedAmount, planUsedAmount,
+                    familyProvidedAmount, familyUsedAmount,
                     planFire, planTh, planRem, planPct,
                     famFire, famTh, famRem, famPct,
                     giftFires,
@@ -155,6 +161,7 @@ public class UsageLuaExecutor {
                     node.path("planTake").asLong(0),
                     node.path("familyTake").asLong(0),
                     node.path("overflow").asLong(0),
+                    0, 0, 0, 0,
                     false, 101, 0, 0,
                     false, 101, 0, 0,
                     List.of(),
@@ -170,6 +177,7 @@ public class UsageLuaExecutor {
         return new UsageLuaResult(
                 true,
                 0, 0, 0, 0, 0,
+                0, 0, 0, 0,
                 false, 101, 0, 0,
                 false, 101, 0, 0,
                 List.of(),
