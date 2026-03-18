@@ -25,7 +25,7 @@ public class KafkaConsumerFactorySupport {
                 StringDeserializer.class);
 
         cfg.put(ConsumerConfig.ENABLE_AUTO_COMMIT_CONFIG, false);
-        cfg.putIfAbsent(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 100);
+        cfg.putIfAbsent(ConsumerConfig.MAX_POLL_RECORDS_CONFIG, 1000);
         cfg.putIfAbsent(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, 600_000);
         cfg.putIfAbsent(ConsumerConfig.FETCH_MIN_BYTES_CONFIG, 65536);
         cfg.putIfAbsent(ConsumerConfig.FETCH_MAX_WAIT_MS_CONFIG, 300);
