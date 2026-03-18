@@ -1,5 +1,6 @@
 package hotspot.worker.consumer.usage.service;
 
+import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
@@ -12,6 +13,7 @@ import hotspot.worker.consumer.usage.schema.UsageEvent;
 import hotspot.worker.outbox.service.UsageAlertOutboxAppender;
 import hotspot.worker.writer.log.dto.UsageAppliedEnvelope;
 import hotspot.worker.writer.log.support.UsageAppliedEventQueue;
+import hotspot.worker.writer.log.support.UsageBatchAcknowledgment;
 
 @Service
 public class UsageEventHandler {
@@ -25,7 +27,6 @@ public class UsageEventHandler {
     private final AtomicLong handledCount = new AtomicLong();
     private final AtomicLong totalHandleNanos = new AtomicLong();
 
-    // 사용량 처리 의존 컴포넌트를 주입받는다.
     public UsageEventHandler(
             UsageLuaExecutor lua,
             UsageAlertOutboxAppender outboxAppender,
@@ -36,32 +37,39 @@ public class UsageEventHandler {
         this.queue = queue;
     }
 
-    // 사용량 이벤트를 Lua로 처리하고 후속 적재 큐에 전달한다.
-    public void handle(UsageEvent ev, Acknowledgment ack) {
-        long start = System.nanoTime();
-        UsageLuaResult result = lua.execute(ev);
-        queue.enqueue(new UsageAppliedEnvelope(
-                ev,
-                result,
-                outboxAppender.buildOutboxEntities(ev, result),
-                outboxAppender.buildAppliedLogEntity(ev, result),
-                ack
-        ));
-        if (result.duplicate()) {
-            log.debug("사용량 이벤트가 중복 또는 무시 처리되었습니다. eventId={}", ev.eventId());
+    public void handle(List<UsageEvent> events, Acknowledgment ack) {
+        if (events == null || events.isEmpty()) {
+            ack.acknowledge();
+            return;
         }
 
-        long elapsedNanos = System.nanoTime() - start;
-        long count = handledCount.incrementAndGet();
-        long total = totalHandleNanos.addAndGet(elapsedNanos);
-        if (count % PERF_LOG_EVERY == 0) {
-            long avgMicros = (total / count) / 1000L;
-            log.info(
-                    "사용량 핸들러 성능 지표입니다. handled={}, avgMicros={}, queueSize={}",
-                    count,
-                    avgMicros,
-                    queue.size()
-            );
+        UsageBatchAcknowledgment batchAcknowledgment = new UsageBatchAcknowledgment(ack, events.size());
+        for (UsageEvent ev : events) {
+            long start = System.nanoTime();
+            UsageLuaResult result = lua.execute(ev);
+            queue.enqueue(new UsageAppliedEnvelope(
+                    ev,
+                    result,
+                    outboxAppender.buildOutboxEntities(ev, result),
+                    outboxAppender.buildAppliedLogEntity(ev, result),
+                    batchAcknowledgment
+            ));
+            if (result.duplicate()) {
+                log.debug("사용량 이벤트가 중복 또는 무시 처리되었습니다. eventId={}", ev.eventId());
+            }
+
+            long elapsedNanos = System.nanoTime() - start;
+            long count = handledCount.incrementAndGet();
+            long total = totalHandleNanos.addAndGet(elapsedNanos);
+            if (count % PERF_LOG_EVERY == 0) {
+                long avgMicros = (total / count) / 1000L;
+                log.info(
+                        "사용량 핸들러 성능 지표입니다. handled={}, avgMicros={}, queueSize={}",
+                        count,
+                        avgMicros,
+                        queue.size()
+                );
+            }
         }
     }
 }
