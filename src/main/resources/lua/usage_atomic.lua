@@ -106,19 +106,16 @@ end
 -- 이전 임계치(last)보다 더 낮아질 때만 notify 상태를 갱신하고 발화 여부(fire)를 반환한다.
 local function update_notify(key, new_th)
   if new_th == 101 then
-    redis.call('EXPIRE', key, ttlNotify)
     return 0, 101
   end
 
   local last = tonumber(redis.call('GET', key) or '101')
 
   if new_th < last then
-    redis.call('SET', key, tostring(new_th))
-    redis.call('EXPIRE', key, ttlNotify)
+    redis.call('SET', key, tostring(new_th), 'EX', ttlNotify)
     return 1, last
   end
 
-  redis.call('EXPIRE', key, ttlNotify)
   return 0, last
 end
 
@@ -182,9 +179,11 @@ for i = 1, #gift_ids do
     gift_used = gift_used + take
     table.insert(gift_allocations, { giftId = gid, usedAmount = take })
 
-    redis.call('HINCRBY', gift_usage_key, 'gift_used', take)
-    redis.call('EXPIRE', gift_usage_key, ttlMon)
-    redis.call('EXPIRE', gift_limit_key, ttlMon)
+    local gift_used_new = redis.call('HINCRBY', gift_usage_key, 'gift_used', take)
+    if gift_used_new == take then
+      redis.call('EXPIRE', gift_usage_key, ttlMon)
+    end
+    gift_used = gift_used_new
 
     local th, rem2, pct = threshold(gift_quota, gift_used)
     local nkey = giftNotifyPrefix .. gid .. ":" .. yyyymm
@@ -220,30 +219,40 @@ remain = remain - family_take
 local overflow = remain
 
 -- 월 단위 개인 사용량(usage:sub:{subId}:{yyyymm})을 누적 갱신한다.
-redis.call('HINCRBY', KEYS[5], 'total_used', bytes)
+local mon_total_used = redis.call('HINCRBY', KEYS[5], 'total_used', bytes)
 redis.call('HINCRBY', KEYS[5], 'plan_used', plan_take)
 redis.call('HINCRBY', KEYS[5], 'member_family_used', family_take)
 redis.call('HINCRBY', KEYS[5], 'gift_used', gift_take_total)
 if overflow > 0 then
   redis.call('HINCRBY', KEYS[5], 'overflow_used', overflow)
 end
-redis.call('EXPIRE', KEYS[5], ttlMon)
+if mon_total_used == bytes then
+  redis.call('EXPIRE', KEYS[5], ttlMon)
+end
 
 -- 일 단위 개인 사용량(usage:sub:{subId}:{yyyymmdd})도 동일하게 누적 갱신한다.
-redis.call('HINCRBY', KEYS[6], 'total_used', bytes)
+local day_total_used = redis.call('HINCRBY', KEYS[6], 'total_used', bytes)
 redis.call('HINCRBY', KEYS[6], 'plan_used', plan_take)
 redis.call('HINCRBY', KEYS[6], 'member_family_used', family_take)
 redis.call('HINCRBY', KEYS[6], 'gift_used', gift_take_total)
 if overflow > 0 then
   redis.call('HINCRBY', KEYS[6], 'overflow_used', overflow)
 end
-redis.call('EXPIRE', KEYS[6], ttlDay)
+if day_total_used == bytes then
+  redis.call('EXPIRE', KEYS[6], ttlDay)
+end
 
 -- 월/일 단위 가족풀 사용량(usage:family:*)을 누적 갱신한다.
-redis.call('HINCRBY', KEYS[7], 'family_used', family_take)
-redis.call('HINCRBY', KEYS[8], 'family_used', family_take)
-redis.call('EXPIRE', KEYS[7], ttlMon)
-redis.call('EXPIRE', KEYS[8], ttlDay)
+if family_take > 0 then
+  local mon_family_used_new = redis.call('HINCRBY', KEYS[7], 'family_used', family_take)
+  local day_family_used_new = redis.call('HINCRBY', KEYS[8], 'family_used', family_take)
+  if mon_family_used_new == family_take then
+    redis.call('EXPIRE', KEYS[7], ttlMon)
+  end
+  if day_family_used_new == family_take then
+    redis.call('EXPIRE', KEYS[8], ttlDay)
+  end
+end
 
 -- 월/일 단위 앱별 사용량(usage:app:*)을 ZSET으로 누적 갱신한다.
 redis.call('ZINCRBY', KEYS[9], bytes, appId)
@@ -256,7 +265,9 @@ redis.call('HINCRBY', KEYS[11], day3HourlyField, bytes)
 redis.call('EXPIRE', KEYS[11], ttlDay)
 
 -- 선물 인덱스(ZSET)가 월 기간 동안 유지되도록 TTL을 갱신한다.
-redis.call('EXPIRE', KEYS[4], ttlMon)
+if #gift_ids > 0 then
+  redis.call('EXPIRE', KEYS[4], ttlMon)
+end
 
 -- 요금제 임계치 변화를 계산하고 월/일 notify 키를 갱신해 발화 여부를 결정한다.
 local plan_used_new = plan_used_base + plan_take
