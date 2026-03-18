@@ -1,5 +1,7 @@
 package hotspot.worker.consumer.usage.service;
 
+import java.util.List;
+
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.support.Acknowledgment;
 import org.springframework.stereotype.Component;
@@ -24,7 +26,7 @@ public class UsageEventsConsumer {
             groupId = "${app.consumer-groups.usage}",
             containerFactory = "usageKafkaListenerContainerFactory"
     )
-    public void onMessage(UsageEvent ev, Acknowledgment ack) {
-        handler.handle(ev, ack);
+    public void onMessage(List<UsageEvent> events, Acknowledgment ack) {
+        handler.handle(events, ack);
     }
 }
