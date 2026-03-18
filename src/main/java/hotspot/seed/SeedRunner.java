@@ -73,6 +73,7 @@ public class SeedRunner {
             deleteByPattern(redis, "notify:gift:*");
             deleteByPattern(redis, "dedup:evt:*");
             deleteByPattern(redis, "idx:family:subs:*");
+            deleteByPattern(redis, "idx:family:subs");
 
             redis.delete("idx:sub:family");
 

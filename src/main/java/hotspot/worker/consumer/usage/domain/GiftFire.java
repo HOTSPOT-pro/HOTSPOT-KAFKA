@@ -5,6 +5,8 @@ public record GiftFire(
         int th,
         long rem,
         int pct,
-        int last
+        int last,
+        long providedAmount,
+        long usedAmount
 ) {
 }

@@ -12,7 +12,6 @@ import hotspot.worker.producer.schema.UsageEvent;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 
-
 @Slf4j
 @Component
 @RequiredArgsConstructor
@@ -37,11 +36,8 @@ public class UsageGenerator {
     private static final int MAX_USAGE_KB = 500;
     private static final int EVENT_SIZE = 5000;
 
-
     public void produceEvent() {
-
         List<UsageEvent> events = generateRandomEvents();
-
         orchestrator.process(events);
     }
 
@@ -50,8 +46,6 @@ public class UsageGenerator {
 //        List<UsageEvent> events = new ArrayList<>();
 //
 //        for (long subId : FIXED_SUB_IDS) {
-//
-//
 //
 //            // Redis에서 familyId 조회
 //            Object familyObj =
@@ -76,14 +70,17 @@ public class UsageGenerator {
 //    }
 
     private List<UsageEvent> generateRandomEvents() {
+        List<Object> sampledSubIds =
+                redisTemplate.opsForHash()
+                        .randomKeys(SUB_FAMILY_IDX_KEY, EVENT_SIZE);
 
-        List<String> subIds =
-                redisTemplate.opsForSet()
-                        .randomMembers(FAMILY_SUB_SET_KEY, EVENT_SIZE);
-
-        if (subIds == null || subIds.isEmpty()) {
+        if (sampledSubIds == null || sampledSubIds.isEmpty()) {
             throw new IllegalStateException("No family subs found");
         }
+
+        List<String> subIds = sampledSubIds.stream()
+                .map(Object::toString)
+                .toList();
 
         List<Object> familyObjs =
                 redisTemplate.opsForHash()
@@ -92,7 +89,6 @@ public class UsageGenerator {
         List<UsageEvent> events = new ArrayList<>(subIds.size());
 
         for (int i = 0; i < subIds.size(); i++) {
-
             String subIdStr = subIds.get(i);
             Object familyObj = familyObjs.get(i);
 
@@ -114,4 +110,38 @@ public class UsageGenerator {
 
         return events;
     }
+
+//    private List<UsageEvent> generateRandomEventsLegacy() {
+//
+//        List<String> subIds =
+//                redisTemplate.opsForSet()
+//                        .randomMembers("idx:family:subs", EVENT_SIZE);
+//
+//        if (subIds == null || subIds.isEmpty()) {
+//            throw new IllegalStateException("No family subs found");
+//        }
+//
+//        List<Object> familyObjs =
+//                redisTemplate.opsForHash()
+//                        .multiGet(SUB_FAMILY_IDX_KEY, new ArrayList<>(subIds));
+//
+//        List<UsageEvent> events = new ArrayList<>(subIds.size());
+//
+//        for (int i = 0; i < subIds.size(); i++) {
+//            String subIdStr = subIds.get(i);
+//            Object familyObj = familyObjs.get(i);
+//
+//            if (familyObj == null) {
+//                continue;
+//            }
+//
+//            long subId = Long.parseLong(subIdStr);
+//            long familyId = Long.parseLong(familyObj.toString());
+//            int bytes = ThreadLocalRandom.current().nextInt(MIN_USAGE_KB, MAX_USAGE_KB + 1);
+//
+//            events.add(UsageEvent.create(subId, familyId, bytes));
+//        }
+//
+//        return events;
+//    }
 }
