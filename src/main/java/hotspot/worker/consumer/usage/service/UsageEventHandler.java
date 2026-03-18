@@ -55,7 +55,7 @@ public class UsageEventHandler {
                     batchAcknowledgment
             ));
             if (result.duplicate()) {
-                log.debug("Duplicate usage event ignored. eventId={}", ev.eventId());
+                log.debug("사용량 이벤트가 중복 또는 무시 처리되었습니다. eventId={}", ev.eventId());
             }
 
             long elapsedNanos = System.nanoTime() - start;
