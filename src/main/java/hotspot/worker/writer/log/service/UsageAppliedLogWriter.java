@@ -98,7 +98,7 @@ public class UsageAppliedLogWriter {
 
     private void acknowledgeBatch(List<UsageAppliedEnvelope> batch) {
         for (UsageAppliedEnvelope envelope : batch) {
-            envelope.acknowledgment().acknowledge();
+            envelope.batchAcknowledgment().markPersisted();
         }
     }
 
