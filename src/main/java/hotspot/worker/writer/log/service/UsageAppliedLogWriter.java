@@ -90,7 +90,6 @@ public class UsageAppliedLogWriter {
                 acknowledgeBatch(batch);
                 logPerf(batch.size(), persistElapsedNanos);
                 batch.clear();
-                backpressureController.tryResumeOnDrain();
             } catch (InterruptedException e) {
                 if (!running.get()) {
                     Thread.currentThread().interrupt();
