@@ -191,7 +191,13 @@ for i = 1, #gift_ids do
     local fire, last = update_notify(nkey, th)
     if fire == 1 then
       table.insert(fired_gifts, {
-        giftId = gid, th = th, rem = rem2, pct = pct, last = last
+        giftId = gid,
+        th = th,
+        rem = rem2,
+        pct = pct,
+        last = last,
+        providedAmount = gift_quota,
+        usedAmount = gift_used
       })
     end
   end
@@ -293,8 +299,8 @@ return {
   "OK",
   bytes,
   gift_take_total, plan_take, family_take, overflow,
-  pool_used_new, (family_limit_total - pool_used_new),
-  (mon_family_used + family_take), family_member_limit,
+  plan_used_new, plan_limit,
+  pool_used_new, family_limit_total,
   plan_fire, plan_th, plan_rem2, plan_pct, plan_last,
   fam_fire, fam_th, fam_rem2, fam_pct, fam_last,
   cjson.encode(fired_gifts),
