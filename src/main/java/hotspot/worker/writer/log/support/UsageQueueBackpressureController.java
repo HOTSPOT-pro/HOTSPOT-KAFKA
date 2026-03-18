@@ -20,7 +20,7 @@ public class UsageQueueBackpressureController {
         this.queue = queue;
         this.retryStrategy = retryStrategy;
         int clamped = (int) Math.floor(queue.capacity() * clampRatio(resumeRatio));
-        this.resumeThreshold = Math.max(0, Math.min(queue.capacity(), clamped));
+        this.resumeThreshold = clamped;
     }
 
     public boolean tryReserveBatchSlots(int batchSize) {
@@ -47,12 +47,6 @@ public class UsageQueueBackpressureController {
     }
 
     private static double clampRatio(double ratio) {
-        if (ratio < 0.0) {
-            return 0.0;
-        }
-        if (ratio > 1.0) {
-            return 1.0;
-        }
-        return ratio;
+        return Math.max(0.0, Math.min(1.0, ratio));
     }
 }
