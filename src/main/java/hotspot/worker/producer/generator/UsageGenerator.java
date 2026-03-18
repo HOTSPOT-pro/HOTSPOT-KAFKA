@@ -1,9 +1,7 @@
 package hotspot.worker.producer.generator;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.List;
-import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
 import org.springframework.data.redis.core.RedisTemplate;
@@ -72,34 +70,26 @@ public class UsageGenerator {
 //    }
 
     private List<UsageEvent> generateRandomEvents() {
-        Set<Object> hashKeys =
+        List<Object> sampledSubIds =
                 redisTemplate.opsForHash()
-                        .keys(SUB_FAMILY_IDX_KEY);
+                        .randomKeys(SUB_FAMILY_IDX_KEY, EVENT_SIZE);
 
-        List<String> subIds = hashKeys == null
-                ? new ArrayList<>()
-                : new ArrayList<>(
-                hashKeys.stream()
-                        .map(Object::toString)
-                        .toList()
-        );
-
-        if (subIds.isEmpty()) {
+        if (sampledSubIds == null || sampledSubIds.isEmpty()) {
             throw new IllegalStateException("No family subs found");
         }
 
-        Collections.shuffle(subIds);
-        int sampleSize = Math.min(EVENT_SIZE, subIds.size());
-        List<String> sampledSubIds = new ArrayList<>(subIds.subList(0, sampleSize));
+        List<String> subIds = sampledSubIds.stream()
+                .map(Object::toString)
+                .toList();
 
         List<Object> familyObjs =
                 redisTemplate.opsForHash()
-                        .multiGet(SUB_FAMILY_IDX_KEY, new ArrayList<>(sampledSubIds));
+                        .multiGet(SUB_FAMILY_IDX_KEY, new ArrayList<>(subIds));
 
-        List<UsageEvent> events = new ArrayList<>(sampledSubIds.size());
+        List<UsageEvent> events = new ArrayList<>(subIds.size());
 
-        for (int i = 0; i < sampledSubIds.size(); i++) {
-            String subIdStr = sampledSubIds.get(i);
+        for (int i = 0; i < subIds.size(); i++) {
+            String subIdStr = subIds.get(i);
             Object familyObj = familyObjs.get(i);
 
             if (familyObj == null) {
