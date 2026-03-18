@@ -14,6 +14,7 @@ import org.springframework.stereotype.Component;
 
 import hotspot.worker.writer.log.dto.UsageAppliedEnvelope;
 import hotspot.worker.writer.log.ochestrator.UsageAppliedBatchOrchestrator;
+import hotspot.worker.writer.log.support.UsageQueueBackpressureController;
 import hotspot.worker.writer.retry.UsageAppliedRetryStrategy;
 
 @Component
@@ -21,11 +22,12 @@ public class UsageAppliedLogWriter {
 
     private static final Logger log = LoggerFactory.getLogger(UsageAppliedLogWriter.class);
     private static final int QUEUE_WARN_THRESHOLD = 5000;
-    private static final long PERF_LOG_EVERY = 1000L;
+    private static final long PERF_LOG_EVERY = 10_000L;
 
     private final UsageAppliedBatchCollector batchCollector;
     private final UsageAppliedBatchOrchestrator persistenceOrchestrator;
     private final UsageAppliedRetryStrategy retryStrategy;
+    private final UsageQueueBackpressureController backpressureController;
 
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicLong persistedCount = new AtomicLong();
@@ -35,11 +37,13 @@ public class UsageAppliedLogWriter {
     public UsageAppliedLogWriter(
             UsageAppliedBatchCollector batchCollector,
             UsageAppliedBatchOrchestrator persistenceOrchestrator,
-            UsageAppliedRetryStrategy retryStrategy
+            UsageAppliedRetryStrategy retryStrategy,
+            UsageQueueBackpressureController backpressureController
     ) {
         this.batchCollector = batchCollector;
         this.persistenceOrchestrator = persistenceOrchestrator;
         this.retryStrategy = retryStrategy;
+        this.backpressureController = backpressureController;
     }
 
     @PostConstruct
@@ -76,6 +80,7 @@ public class UsageAppliedLogWriter {
                 if (!batchCollector.collectBatch(batch) && !running.get()) {
                     break;
                 }
+                backpressureController.tryResumeOnDrain();
                 if (batch.isEmpty()) {
                     continue;
                 }
@@ -92,6 +97,8 @@ public class UsageAppliedLogWriter {
                 }
             } catch (Exception e) {
                 log.error("Unexpected error in UsageAppliedLogWriter loop.", e);
+            } finally {
+                backpressureController.tryResumeOnDrain();
             }
         }
     }
