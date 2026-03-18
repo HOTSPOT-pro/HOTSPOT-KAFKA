@@ -1,5 +1,7 @@
 package hotspot.worker.writer.retry;
 
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.slf4j.Logger;
@@ -14,12 +16,16 @@ public class UsageAppliedRetryStrategy {
 
     private static final Logger log = LoggerFactory.getLogger(UsageAppliedRetryStrategy.class);
     private static final long DEFAULT_RETRY_WAIT_MILLIS = 1000L;
+    public static final String REASON_DB_RETRY = "db-retry-exceeded";
+    public static final String REASON_QUEUE_BACKPRESSURE = "queue-backpressure";
 
     private final KafkaListenerEndpointRegistry listenerRegistry;
     private final int maxRetries;
     private final long pausedRetryWaitMillis;
     private final String listenerId;
     private final AtomicBoolean paused = new AtomicBoolean(false);
+    private final Set<String> activePauseReasons = ConcurrentHashMap.newKeySet();
+    private final Object pauseLock = new Object();
 
     public UsageAppliedRetryStrategy(
             KafkaListenerEndpointRegistry listenerRegistry,
@@ -47,7 +53,7 @@ public class UsageAppliedRetryStrategy {
         int failures = context.incrementAndGet();
         boolean exceeded = failures > maxRetries;
         if (exceeded) {
-            pauseIfNeeded();
+            requestPause(REASON_DB_RETRY);
         }
 
         long waitMillis = exceeded ? pausedRetryWaitMillis : DEFAULT_RETRY_WAIT_MILLIS;
@@ -66,7 +72,7 @@ public class UsageAppliedRetryStrategy {
     }
 
     public void onSuccess() {
-        resumeIfPaused();
+        releasePause(REASON_DB_RETRY);
     }
 
     public int maxRetries() {
@@ -77,30 +83,58 @@ public class UsageAppliedRetryStrategy {
         return pausedRetryWaitMillis;
     }
 
-    private void pauseIfNeeded() {
-        if (!paused.compareAndSet(false, true)) {
-            return;
+    public void requestPause(String reason) {
+        synchronized (pauseLock) {
+            if (!activePauseReasons.add(reason)) {
+                return;
+            }
+            if (paused.get()) {
+                return;
+            }
+            MessageListenerContainer container = listenerRegistry.getListenerContainer(listenerId);
+            if (container == null) {
+                log.error(
+                        "Failed to pause listener because container not found. id={}, reason={}",
+                        listenerId,
+                        reason
+                );
+                return;
+            }
+            container.pause();
+            paused.set(true);
+            log.warn(
+                    "Paused usage listener. id={}, reason={}, activeReasons={}",
+                    listenerId,
+                    reason,
+                    activePauseReasons
+            );
         }
-        MessageListenerContainer container = listenerRegistry.getListenerContainer(listenerId);
-        if (container == null) {
-            log.error("Failed to pause listener because container not found. id={}", listenerId);
-            return;
-        }
-        container.pause();
-        log.warn("Paused usage listener after transient DB retries exceeded. id={}", listenerId);
     }
 
-    private void resumeIfPaused() {
-        if (!paused.compareAndSet(true, false)) {
-            return;
+    public void releasePause(String reason) {
+        synchronized (pauseLock) {
+            if (!activePauseReasons.remove(reason)) {
+                return;
+            }
+            if (!activePauseReasons.isEmpty()) {
+                return;
+            }
+            if (!paused.get()) {
+                return;
+            }
+            MessageListenerContainer container = listenerRegistry.getListenerContainer(listenerId);
+            if (container == null) {
+                log.error(
+                        "Failed to resume listener because container not found. id={}, reason={}",
+                        listenerId,
+                        reason
+                );
+                return;
+            }
+            container.resume();
+            paused.set(false);
+            log.info("Resumed usage listener. id={}, reason={}", listenerId, reason);
         }
-        MessageListenerContainer container = listenerRegistry.getListenerContainer(listenerId);
-        if (container == null) {
-            log.error("Failed to resume listener because container not found. id={}", listenerId);
-            return;
-        }
-        container.resume();
-        log.info("Resumed usage listener after persistence recovered. id={}", listenerId);
     }
 
     public static final class RetryContext {
