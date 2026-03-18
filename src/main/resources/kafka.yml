@@ -21,6 +21,11 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       auto-offset-reset: earliest
       enable-auto-commit: false
+      max-poll-records: ${KAFKA_CONSUMER_MAX_POLL_RECORDS:1000}
+      properties:
+        max.poll.interval.ms: ${KAFKA_CONSUMER_MAX_POLL_INTERVAL_MS:600000}
+        fetch.min.bytes: ${KAFKA_CONSUMER_FETCH_MIN_BYTES:65536}
+        fetch.max.wait.ms: ${KAFKA_CONSUMER_FETCH_MAX_WAIT_MS:300}
 
     listener:
       ack-mode: manual
