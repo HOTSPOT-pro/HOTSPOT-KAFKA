@@ -176,7 +176,6 @@ for i = 1, #gift_ids do
 
     remain = remain - take
     gift_take_total = gift_take_total + take
-    gift_used = gift_used + take
     table.insert(gift_allocations, { giftId = gid, usedAmount = take })
 
     local gift_used_new = redis.call('HINCRBY', gift_usage_key, 'gift_used', take)
