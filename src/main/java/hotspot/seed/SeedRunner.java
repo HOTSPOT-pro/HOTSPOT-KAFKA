@@ -343,11 +343,8 @@ public class SeedRunner {
                     LocalDate date = monthDates.get(i);
                     long totalUsed = dailyTotals.get(i);
                     long giftUsed = 0L;
+                    // SeedRunner should seed personal usage only (no family usage seeding).
                     long familyUsed = 0L;
-                    if (familyId != null) {
-                        long familyLimit = Math.max(0L, totalUsed - giftUsed);
-                        familyUsed = random.nextInt(100) < 40 ? randomBetween(random, 0L, familyLimit / 4) : 0L;
-                    }
                     long overflowUsed = 0L;
                     long overflowLimit = Math.max(0L, totalUsed - giftUsed - familyUsed);
                     if (random.nextInt(100) < 3) {
@@ -405,7 +402,9 @@ public class SeedRunner {
     private void incrSubUsage(RedisConnection conn, String key, HistoricalUsageRow row) {
         conn.hIncrBy(b(key), b("total_used"), row.totalUsed());
         conn.hIncrBy(b(key), b("plan_used"), row.planUsed());
-        conn.hIncrBy(b(key), b("member_family_used"), row.familyUsed());
+        if (row.familyUsed() > 0) {
+            conn.hIncrBy(b(key), b("member_family_used"), row.familyUsed());
+        }
         conn.hIncrBy(b(key), b("gift_used"), row.giftUsed());
         if (row.overflowUsed() > 0) {
             conn.hIncrBy(b(key), b("overflow_used"), row.overflowUsed());
