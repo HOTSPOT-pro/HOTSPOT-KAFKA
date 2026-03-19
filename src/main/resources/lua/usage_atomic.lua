@@ -123,9 +123,11 @@ local family_limit_total = tonumber(redis.call('HGET', KEYS[2], 'family_limit') 
 local family_member_limit = tonumber(redis.call('HGET', KEYS[3], 'family_limit') or '0')
 
 -- 월 누적 사용량(개인/가족/가족풀)을 Redis에서 조회한다.
-local mon_plan_used = tonumber(redis.call('HGET', KEYS[5], 'plan_used') or '0')
-local day_plan_used = tonumber(redis.call('HGET', KEYS[6], 'plan_used') or '0')
-local mon_family_used = tonumber(redis.call('HGET', KEYS[5], 'member_family_used') or '0')
+local mon_usage_fields = redis.call('HMGET', KEYS[5], 'plan_used', 'member_family_used')
+local mon_plan_used = tonumber(mon_usage_fields[1] or '0')
+local mon_family_used = tonumber(mon_usage_fields[2] or '0')
+local day_usage_fields = redis.call('HMGET', KEYS[6], 'plan_used')
+local day_plan_used = tonumber(day_usage_fields[1] or '0')
 local mon_pool_used = tonumber(redis.call('HGET', KEYS[7], 'family_used') or '0')
 
 local plan_used_base = mon_plan_used
@@ -219,9 +221,15 @@ local overflow = remain
 
 -- 월 단위 개인 사용량(usage:sub:{subId}:{yyyymm})을 누적 갱신한다.
 local mon_total_used = redis.call('HINCRBY', KEYS[5], 'total_used', bytes)
-redis.call('HINCRBY', KEYS[5], 'plan_used', plan_take)
-redis.call('HINCRBY', KEYS[5], 'member_family_used', family_take)
-redis.call('HINCRBY', KEYS[5], 'gift_used', gift_take_total)
+if plan_take > 0 then
+  redis.call('HINCRBY', KEYS[5], 'plan_used', plan_take)
+end
+if family_take > 0 then
+  redis.call('HINCRBY', KEYS[5], 'member_family_used', family_take)
+end
+if gift_take_total > 0 then
+  redis.call('HINCRBY', KEYS[5], 'gift_used', gift_take_total)
+end
 if overflow > 0 then
   redis.call('HINCRBY', KEYS[5], 'overflow_used', overflow)
 end
@@ -231,9 +239,15 @@ end
 
 -- 일 단위 개인 사용량(usage:sub:{subId}:{yyyymmdd})도 동일하게 누적 갱신한다.
 local day_total_used = redis.call('HINCRBY', KEYS[6], 'total_used', bytes)
-redis.call('HINCRBY', KEYS[6], 'plan_used', plan_take)
-redis.call('HINCRBY', KEYS[6], 'member_family_used', family_take)
-redis.call('HINCRBY', KEYS[6], 'gift_used', gift_take_total)
+if plan_take > 0 then
+  redis.call('HINCRBY', KEYS[6], 'plan_used', plan_take)
+end
+if family_take > 0 then
+  redis.call('HINCRBY', KEYS[6], 'member_family_used', family_take)
+end
+if gift_take_total > 0 then
+  redis.call('HINCRBY', KEYS[6], 'gift_used', gift_take_total)
+end
 if overflow > 0 then
   redis.call('HINCRBY', KEYS[6], 'overflow_used', overflow)
 end
