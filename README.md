@@ -580,6 +580,29 @@ HotSpot의 요구사항은 샤딩보다 **장애 발생 시 자동 복구와 애
 - 애플리케이션은 Sentinel 3대의 주소와 Master 이름을 기준으로 연결합니다.
 
 ### 정상 흐름
+```mermaid
+sequenceDiagram
+  autonumber
+  participant A as Spring Boot App
+  participant S1 as Redis Sentinel 1
+  participant S2 as Redis Sentinel 2
+  participant S3 as Redis Sentinel 3
+  participant M as Redis Master
+  participant R1 as Redis Replica 1
+  participant R2 as Redis Replica 2
+
+  A->>S1: 현재 Master 조회
+  S1-->>A: Master 주소 반환
+  A->>M: 읽기/쓰기 요청
+  M-->>A: 응답 반환
+
+  M->>R1: 데이터 복제
+  M->>R2: 데이터 복제
+
+  S1->>M: Master 상태 감시
+  S2->>M: Master 상태 감시
+  S3->>M: Master 상태 감시
+```
 1. 애플리케이션은 Sentinel 목록에 연결합니다.
 2. Sentinel은 현재 Master 주소를 반환합니다.
 3. 애플리케이션은 반환받은 Master에 읽기/쓰기 요청을 보냅니다.
@@ -587,6 +610,37 @@ HotSpot의 요구사항은 샤딩보다 **장애 발생 시 자동 복구와 애
 5. Master의 데이터는 Replica들로 복제됩니다.
 
 ### 장애 흐름
+```mermaid
+sequenceDiagram
+  autonumber
+  participant A as Spring Boot App
+  participant S1 as Redis Sentinel 1
+  participant S2 as Redis Sentinel 2
+  participant S3 as Redis Sentinel 3
+  participant M as Redis Master
+  participant R1 as Redis Replica 1
+  participant R2 as Redis Replica 2
+
+  Note over M: Master 장애 발생
+  S1->>M: ping / 상태 확인 실패
+  S2->>M: ping / 상태 확인 실패
+  S3->>M: ping / 상태 확인 실패
+
+  S1->>S2: 장애 여부 공유
+  S2->>S3: quorum 판단
+  S3-->>S1: 과반수 충족, failover 진행
+
+  S1->>R1: 새 Master로 승격
+  R1-->>S1: role=master 전환
+  S2->>R2: 새 Master 기준 복제 재구성
+  R2-->>S2: replica 재연결 완료
+
+  A->>S1: 현재 Master 재조회
+  S1-->>A: 새 Master(R1) 주소 반환
+  A->>R1: 재연결 후 요청 재개
+  R1-->>A: 응답 반환
+```
+
 1. 기존 Master에 장애가 발생합니다.
 2. Sentinel들은 Master 상태를 감시하다가 quorum 기준을 만족하면 장애를 확정합니다.
 3. Replica 중 1대를 새 Master로 승격합니다.
@@ -668,18 +722,6 @@ Replica는 `replicaof`, `replica-announce-port` 설정을 통해 현재 Master�
 - 장애 후 기존 Master 컨테이너를 다시 기동했습니다.
 - 재기동된 기존 Master는 standalone master로 복귀하지 않고, 현재 Master를 따르는 `role:slave` 로 재편입됐습니다.
 - 최종적으로 `master_link_status:up` 상태까지 확인하여 복제 링크가 정상 회복된 것을 검증했습니다.
-
-### 고찰
-
-이번 로컬 검증을 통해 Redis Master-Replica-Sentinel 구조가 이론적 설계에 그치지 않고, 실제 장애 상황에서도 다음과 같이 동작함을 확인했습니다.
-
-- Sentinel은 Master 장애를 감지하고 Replica를 새 Master로 승격할 수 있습니다.
-- 장애 이전에 복제된 데이터는 failover 이후에도 유지됩니다.
-- 기존 Master가 복구되면 현재 Master를 따르는 Replica로 재편입될 수 있습니다.
-- 애플리케이션이 Sentinel 기반으로 현재 Master를 조회하는 구조라면, 장애 이후에도 연결 대상을 다시 찾을 수 있습니다.
-
-다만 로컬 환경에서는 Docker 내부 호스트명과 호스트 OS의 네트워크 해석 차이로 인해 추가 보정이 필요했습니다.  
-운영 환경에서는 `/etc/hosts` 방식이 아니라 **VPC 내 private IP 또는 private DNS 기반으로 구성해야 한다는 점**도 함께 확인했습니다.
 
 </br>
 
