@@ -48,6 +48,11 @@
   - [🗺️ 개요](#cdc-overview)
   - [🔎 동작 흐름](#cdc-flow)
 
+[🛡️ Redis 고가용성 보장: Sentinel 기반 Failover](#redis-ha)
+  - [🗺️ 개요](#redis-ha-overview)
+  - [🔎 구조와 장애 조치 흐름](#redis-ha-flow)
+  - [🧪 로컬 검증 결과](#redis-ha-test)
+
 [🔁 Redis-only의 한계와 RDB 기반 정합성 아키텍처 전환](#evolution)
   - [⚠️ Redis-only의 구조적 한계](#evolution-limit)
   - [🎯 목표](#evolution-goal)
@@ -503,6 +508,185 @@ sequenceDiagram
 ---
 
 </br>
+
+<a id="redis-ha"></a>
+## 🛡️ Redis 고가용성 보장: Sentinel 기반 Failover
+
+HotSpot은 Redis를 단순 캐시를 넘어, 빠른 응답이 필요한 상태성 데이터와 실시간 기능을 처리하는 핵심 저장소로 사용합니다.  
+따라서 Redis 장애는 단순 성능 저하가 아니라, 일부 기능의 즉시 중단으로 이어질 수 있습니다.
+
+이를 해결하기 위해 HotSpot은 **Redis Master-Replica-Sentinel 구조**를 도입해  
+장애 발생 시 **자동 장애 조치(failover)** 와 **애플리케이션 재연결**이 가능하도록 설계했습니다.
+
+</br>
+
+<a id="redis-ha-overview"></a>
+## 🗺️ 개요
+
+### 1) 문제
+단일 Redis 구조에서는 다음 한계가 존재합니다.
+
+- Redis 인스턴스 장애가 곧바로 서비스 기능 장애로 이어질 수 있음
+- 애플리케이션이 특정 Redis Host를 직접 바라보면 장애 이후에도 자동 복구가 어려움
+- Redis를 상태 저장, 집계, 중복 방지, 임시 데이터 처리에 사용할수록 장애 영향이 커짐
+
+즉, Redis를 서비스 핵심 경로에서 활용하는 구조라면  
+**장애 발생 자체보다 장애 이후 얼마나 빠르게 자동 복구할 수 있는가**가 더 중요합니다.
+
+### 2) 해결
+HotSpot은 이를 해결하기 위해 **Redis Master-Replica-Sentinel 구조**를 채택했습니다.
+
+- **Redis Master**: 실제 쓰기 요청 처리
+- **Redis Replica**: Master 데이터를 복제하고 장애 시 승격 후보 역할 수행
+- **Redis Sentinel**: Master 상태를 감시하고 quorum 기반으로 장애를 판별한 뒤 failover 수행
+- **Spring Boot App**: 특정 Redis 노드를 직접 바라보지 않고 Sentinel을 통해 현재 Master를 조회해 연결
+
+이 구조를 통해 다음을 목표로 했습니다.
+
+- Redis Master 장애 발생 시 자동 장애 조치
+- Spring Boot 애플리케이션의 새 Master 자동 인지 및 재연결
+- 장애 상황에서도 장시간 서비스 중단 없이 복구 가능한 구조 확보
+
+</br>
+
+### 3) 대안 검토
+
+| 대안 | 장점 | 단점 | 적합도 |
+| --- | --- | --- | --- |
+| 단일 Redis | 구성 단순, 운영 쉬움 | SPOF 발생, 장애 시 수동 복구 필요 | 낮음 |
+| Master-Replica | 데이터 복제 가능, 읽기 분산 가능 | Master 장애 시 자동 승격 불가 | 보통 |
+| Master-Replica-Sentinel | 장애 감지, 자동 승격, 앱 재연결 가능 | 운영 복잡도 증가, quorum 고려 필요 | 높음 |
+| Redis Cluster | 샤딩 + 고가용성 지원 | 현재 요구 대비 구조 복잡 | 낮음 |
+
+HotSpot의 요구사항은 샤딩보다 **장애 발생 시 자동 복구와 애플리케이션 재연결**에 가까웠기 때문에,  
+최종적으로 **Master-Replica-Sentinel 구조**를 선택했습니다.
+
+</br>
+
+<a id="redis-ha-flow"></a>
+## 🔎 구조와 장애 조치 흐름
+
+### 구성 요소
+
+| 구성 요소 | 수량 | 역할 |
+| --- | --- | --- |
+| Redis Master | 1 | 실제 쓰기 요청 처리 |
+| Redis Replica | 2 | 데이터 복제, 장애 시 승격 후보 |
+| Redis Sentinel | 3 | Master 감시, 장애 판별, 승격 수행 |
+| Spring Boot App | N | Sentinel 통해 현재 Master 조회 후 연결 |
+
+- 각 Redis 노드는 가능한 한 서로 다른 서버 또는 컨테이너에 분리 배치합니다.
+- Sentinel 역시 동일한 장애 도메인에 함께 위치하지 않도록 분산 배치합니다.
+- 애플리케이션은 Sentinel 3대의 주소와 Master 이름을 기준으로 연결합니다.
+
+### 정상 흐름
+1. 애플리케이션은 Sentinel 목록에 연결합니다.
+2. Sentinel은 현재 Master 주소를 반환합니다.
+3. 애플리케이션은 반환받은 Master에 읽기/쓰기 요청을 보냅니다.
+4. Master는 요청을 처리한 뒤 응답을 반환합니다.
+5. Master의 데이터는 Replica들로 복제됩니다.
+
+### 장애 흐름
+1. 기존 Master에 장애가 발생합니다.
+2. Sentinel들은 Master 상태를 감시하다가 quorum 기준을 만족하면 장애를 확정합니다.
+3. Replica 중 1대를 새 Master로 승격합니다.
+4. 이후 Sentinel은 새 Master 정보를 애플리케이션에 제공합니다.
+5. 애플리케이션은 새 Master에 재연결한 뒤 요청을 재개합니다.
+
+> 핵심은 애플리케이션이 처음부터 특정 Redis 인스턴스를 직접 바라보지 않는다는 점입니다.  
+> Sentinel이 현재 Master를 알려주는 구조이기 때문에, 장애 이후에도 연결 대상을 다시 찾을 수 있습니다.
+
+</br>
+
+### Spring Boot 연결 방식
+
+HotSpot의 Spring Boot 애플리케이션은 Redis Host를 직접 참조하지 않고,  
+**Sentinel 목록 + Master 이름**을 기준으로 현재 활성 Master를 조회하도록 구성했습니다.
+
+즉 애플리케이션은 다음 정보를 기준으로 Redis에 연결합니다.
+
+- Sentinel 노드 목록
+- Sentinel이 감시하는 Master 이름
+- 비밀번호 및 연결 옵션
+
+이 방식을 통해 Master가 바뀌어도 애플리케이션 설정 자체를 수정하지 않고  
+장애 이후 새 Master로 자동 재연결할 수 있도록 설계했습니다.
+
+</br>
+
+<a id="redis-ha-test"></a>
+## 🧪 로컬 검증 결과
+
+설계 단계에서 정의한 Redis Master-Replica-Sentinel 구조가 실제로 동작하는지 확인하기 위해,  
+로컬 환경에서 Docker Compose 기반 실습 환경을 구성하고 장애 조치 흐름을 검증했습니다.
+
+### 로컬 구성
+
+| 구성 요소 | 포트 | 역할 |
+| --- | --- | --- |
+| redis-master | 6389 | 초기 Master |
+| redis-replica1 | 6390 | Replica |
+| redis-replica2 | 6391 | Replica |
+| redis-sentinel1 | 26389 | Sentinel |
+| redis-sentinel2 | 26390 | Sentinel |
+| redis-sentinel3 | 26391 | Sentinel |
+
+Sentinel은 `mymaster` 라는 이름으로 Master를 감시하도록 설정했고,  
+Replica는 `replicaof`, `replica-announce-port` 설정을 통해 현재 Master를 따라가도록 구성했습니다.
+
+### 로컬 테스트에서 확인한 이슈와 해결 과정
+
+#### 1) Sentinel 기동 실패
+- 초기에는 Sentinel이 `redis-master` 호스트명을 해석하지 못해 컨테이너가 종료됐습니다.
+- 이 문제는 `sentinel resolve-hostnames yes`, `sentinel announce-hostnames yes` 설정을 추가해 해결했습니다.
+
+#### 2) failover 실패
+- 초기에는 Sentinel 로그에 `-failover-abort-no-good-slave` 가 발생했습니다.
+- 원인은 Replica의 `replicaof`, `replica-announce-port` 값과 실제 노출 포트가 일치하지 않았기 때문이었습니다.
+- 이후 Master와 Replica, Sentinel 포트를 각각 6389/6390/6391, 26389/26390/26391로 명확히 정리하고 설정을 일치시켜 정상 승격이 가능하도록 수정했습니다.
+
+#### 3) Spring Boot 재연결 실패
+- Spring Boot는 호스트 환경에서 실행되고 있었는데, Sentinel이 Docker 내부 호스트명(`redis-replica1`, `redis-replica2`)을 반환하면서 `UnknownHostException` 이 발생했습니다.
+- 이를 해결하기 위해 로컬 테스트에서는 `/etc/hosts`에 Docker 서비스명을 `127.0.0.1`로 매핑해 호스트에서도 Sentinel이 반환한 주소를 인식할 수 있도록 맞췄습니다.
+
+### 검증 시나리오와 결과
+
+#### 시나리오 1. 정상 상태 확인
+- Sentinel이 현재 Master를 `redis-master:6389` 로 인식하는지 확인했습니다.
+- Master는 `connected_slaves:2` 상태였고, Replica 2대 모두 `master_link_status:up` 상태로 정상 복제 중인 것을 확인했습니다.
+
+#### 시나리오 2. Master 장애 발생
+- 기존 Master 컨테이너를 중단했습니다.
+- 이후 Sentinel이 새 Master를 `redis-replica1:6390` 또는 `redis-replica2:6391` 로 재선정하는 것을 확인했습니다.
+- 승격된 Replica는 `role:master`, 남은 Replica는 새 Master를 따르는 `role:slave` 상태로 변경됐습니다.
+
+#### 시나리오 3. 장애 이후 데이터 조회
+- 장애 전 Master에 저장한 key를 failover 이후 조회했을 때 동일한 값이 반환되는 것을 확인했습니다.
+- 이는 장애 전 저장한 데이터가 Replica에 정상적으로 복제됐고, 승격 이후 새 Master에서도 그대로 유지되었음을 의미합니다.
+
+#### 시나리오 4. 기존 Master 재기동
+- 장애 후 기존 Master 컨테이너를 다시 기동했습니다.
+- 재기동된 기존 Master는 standalone master로 복귀하지 않고, 현재 Master를 따르는 `role:slave` 로 재편입됐습니다.
+- 최종적으로 `master_link_status:up` 상태까지 확인하여 복제 링크가 정상 회복된 것을 검증했습니다.
+
+### 고찰
+
+이번 로컬 검증을 통해 Redis Master-Replica-Sentinel 구조가 이론적 설계에 그치지 않고, 실제 장애 상황에서도 다음과 같이 동작함을 확인했습니다.
+
+- Sentinel은 Master 장애를 감지하고 Replica를 새 Master로 승격할 수 있습니다.
+- 장애 이전에 복제된 데이터는 failover 이후에도 유지됩니다.
+- 기존 Master가 복구되면 현재 Master를 따르는 Replica로 재편입될 수 있습니다.
+- 애플리케이션이 Sentinel 기반으로 현재 Master를 조회하는 구조라면, 장애 이후에도 연결 대상을 다시 찾을 수 있습니다.
+
+다만 로컬 환경에서는 Docker 내부 호스트명과 호스트 OS의 네트워크 해석 차이로 인해 추가 보정이 필요했습니다.  
+운영 환경에서는 `/etc/hosts` 방식이 아니라 **VPC 내 private IP 또는 private DNS 기반으로 구성해야 한다는 점**도 함께 확인했습니다.
+
+</br>
+
+---
+
+</br>
+
 
 <a id="evolution-goal"></a>
 ## 🔁 Redis 이중화 전략과 정합성 보장
