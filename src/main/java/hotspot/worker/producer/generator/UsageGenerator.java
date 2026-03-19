@@ -34,7 +34,7 @@ public class UsageGenerator {
 
     private static final int MIN_USAGE_KB = 50;
     private static final int MAX_USAGE_KB = 500;
-    private static final int EVENT_SIZE = 10000;
+    private static final int EVENT_SIZE = 7000;
 
     public void produceEvent() {
         List<UsageEvent> events = generateRandomEvents();
