@@ -70,8 +70,6 @@ end
 if redis.call('EXISTS', KEYS[15]) == 1 then
   local cached = redis.call('GET', KEYS[16])
   if cached then
-    redis.call('EXPIRE', KEYS[15], ttlDedup)
-    redis.call('EXPIRE', KEYS[16], ttlResult)
     return { "DUP", cached }
   end
   return { "DUP_MISSING_RESULT" }
@@ -185,18 +183,20 @@ for i = 1, #gift_ids do
     gift_used = gift_used_new
 
     local th, rem2, pct = threshold(gift_quota, gift_used)
-    local nkey = giftNotifyPrefix .. gid .. ":" .. yyyymm
-    local fire, last = update_notify(nkey, th)
-    if fire == 1 then
-      table.insert(fired_gifts, {
-        giftId = gid,
-        th = th,
-        rem = rem2,
-        pct = pct,
-        last = last,
-        providedAmount = gift_quota,
-        usedAmount = gift_used
-      })
+    if th ~= 101 then
+      local nkey = giftNotifyPrefix .. gid .. ":" .. yyyymm
+      local fire, last = update_notify(nkey, th)
+      if fire == 1 then
+        table.insert(fired_gifts, {
+          giftId = gid,
+          th = th,
+          rem = rem2,
+          pct = pct,
+          last = last,
+          providedAmount = gift_quota,
+          usedAmount = gift_used
+        })
+      end
     end
   end
 end
@@ -254,30 +254,42 @@ if family_take > 0 then
 end
 
 -- 월/일 단위 앱별 사용량(usage:app:*)을 ZSET으로 누적 갱신한다.
+local app_mon_exists = redis.call('EXISTS', KEYS[9])
+local app_day_exists = redis.call('EXISTS', KEYS[10])
 redis.call('ZINCRBY', KEYS[9], bytes, appId)
 redis.call('ZINCRBY', KEYS[10], bytes, appId)
-redis.call('EXPIRE', KEYS[9], ttlMon)
-redis.call('EXPIRE', KEYS[10], ttlDay)
+if app_mon_exists == 0 then
+  redis.call('EXPIRE', KEYS[9], ttlMon)
+end
+if app_day_exists == 0 then
+  redis.call('EXPIRE', KEYS[10], ttlDay)
+end
 
 -- 일 단위 3시간 버킷 사용량(usage:3hourly:{subId}:{yyyymmdd})을 HASH로 누적 갱신한다.
+local hourly_exists = redis.call('EXISTS', KEYS[11])
 redis.call('HINCRBY', KEYS[11], day3HourlyField, bytes)
-redis.call('EXPIRE', KEYS[11], ttlDay)
-
--- 선물 인덱스(ZSET)가 월 기간 동안 유지되도록 TTL을 갱신한다.
-if #gift_ids > 0 then
-  redis.call('EXPIRE', KEYS[4], ttlMon)
+if hourly_exists == 0 then
+  redis.call('EXPIRE', KEYS[11], ttlDay)
 end
 
 -- 요금제 임계치 변화를 계산하고 월/일 notify 키를 갱신해 발화 여부를 결정한다.
 local plan_used_new = plan_used_base + plan_take
 local plan_th, plan_rem2, plan_pct = threshold(plan_limit, plan_used_new)
-local plan_fire, plan_last = update_notify(KEYS[12], plan_th)
-update_notify(KEYS[13], plan_th)
+local plan_fire = 0
+local plan_last = 101
+if plan_take > 0 and plan_th ~= 101 then
+  plan_fire, plan_last = update_notify(KEYS[12], plan_th)
+  update_notify(KEYS[13], plan_th)
+end
 
 -- 가족풀 임계치 변화를 계산하고 notify 키를 갱신해 발화 여부를 결정한다.
 local pool_used_new = mon_pool_used + family_take
 local fam_th, fam_rem2, fam_pct = threshold(family_limit_total, pool_used_new)
-local fam_fire, fam_last = update_notify(KEYS[14], fam_th)
+local fam_fire = 0
+local fam_last = 101
+if family_take > 0 and fam_th ~= 101 then
+  fam_fire, fam_last = update_notify(KEYS[14], fam_th)
+end
 
 -- 이번 이벤트 처리 완료를 dedup 키로 기록해 중복 처리를 방지한다.
 redis.call('SET', KEYS[15], '1', 'EX', ttlDedup)
