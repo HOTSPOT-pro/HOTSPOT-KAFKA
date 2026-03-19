@@ -2,6 +2,7 @@ package hotspot.worker.consumer.usage.service;
 
 import java.nio.charset.StandardCharsets;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import org.slf4j.Logger;
@@ -19,6 +20,9 @@ import hotspot.worker.consumer.usage.domain.GiftFire;
 import hotspot.worker.consumer.usage.domain.UsageLuaResult;
 import hotspot.worker.consumer.usage.schema.UsageEvent;
 import hotspot.worker.consumer.usage.support.RedisKeyBuilder;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Timer;
 
 @Service
 public class UsageLuaExecutor {
@@ -35,23 +39,48 @@ public class UsageLuaExecutor {
     private final DefaultRedisScript<List> usageAtomicScript;
     private final RedisKeyBuilder keyBuilder;
     private final ObjectMapper om;
+    private final Timer luaTotalTimer;
+    private final Timer luaRedisExecuteTimer;
+    private final Timer luaParseTimer;
+    private final Counter luaStatusOkCounter;
+    private final Counter luaStatusDupCounter;
+    private final Counter luaStatusInvalidBytesCounter;
     private final AtomicLong executedCount = new AtomicLong();
     private final AtomicLong totalExecuteNanos = new AtomicLong();
+    private final AtomicLong totalRedisExecuteNanos = new AtomicLong();
+    private final AtomicLong totalParseNanos = new AtomicLong();
 
-    // Lua 실행과 결과 파싱에 필요한 의존성을 주입받는다.
     public UsageLuaExecutor(
             StringRedisTemplate redis,
             DefaultRedisScript<List> usageAtomicScript,
             RedisKeyBuilder keyBuilder,
-            ObjectMapper om
+            ObjectMapper om,
+            MeterRegistry meterRegistry
     ) {
         this.redis = redis;
         this.usageAtomicScript = usageAtomicScript;
         this.keyBuilder = keyBuilder;
         this.om = om;
+        this.luaTotalTimer = Timer.builder("hotspot.usage.lua.total")
+                .description("Total Lua executor time per event")
+                .register(meterRegistry);
+        this.luaRedisExecuteTimer = Timer.builder("hotspot.usage.lua.redis.execute")
+                .description("Redis EVAL roundtrip time per event")
+                .register(meterRegistry);
+        this.luaParseTimer = Timer.builder("hotspot.usage.lua.parse")
+                .description("Lua response parsing time per event")
+                .register(meterRegistry);
+        this.luaStatusOkCounter = Counter.builder("hotspot.usage.lua.status")
+                .tag("status", "ok")
+                .register(meterRegistry);
+        this.luaStatusDupCounter = Counter.builder("hotspot.usage.lua.status")
+                .tag("status", "dup")
+                .register(meterRegistry);
+        this.luaStatusInvalidBytesCounter = Counter.builder("hotspot.usage.lua.status")
+                .tag("status", "invalid_bytes")
+                .register(meterRegistry);
     }
 
-    // usage 이벤트를 Lua 스크립트로 원자 처리하고 결과를 DTO로 변환한다.
     public UsageLuaResult execute(UsageEvent ev) {
         long start = System.nanoTime();
         RedisKeyBuilder.Keys keysPack =
@@ -77,19 +106,24 @@ public class UsageLuaExecutor {
         );
 
         Object[] argvArray = argv.toArray(new Object[0]);
+        long redisExecuteStart = System.nanoTime();
         Object raw = redis.execute(usageAtomicScript, keysPack.keys(), argvArray);
+        long redisExecuteElapsedNanos = System.nanoTime() - redisExecuteStart;
         @SuppressWarnings("unchecked")
         List<Object> arr = (List<Object>) raw;
 
+        long parseStart = System.nanoTime();
         String status = toStr(arr.get(0));
         UsageLuaResult result;
         if ("INVALID_BYTES".equals(status)) {
             result = ignoredResult();
+            luaStatusInvalidBytesCounter.increment();
         } else if ("DUP".equals(status)) {
             if (arr.size() < 2 || toStr(arr.get(1)) == null || toStr(arr.get(1)).isBlank()) {
                 throw new IllegalStateException("Lua returned DUP without cached result payload");
             }
             result = parseCachedResult(toStr(arr.get(1)));
+            luaStatusDupCounter.increment();
         } else if ("DUP_MISSING_RESULT".equals(status)) {
             throw new IllegalStateException("Lua returned DUP but result cache key is missing");
         } else if (!"OK".equals(status)) {
@@ -127,19 +161,33 @@ public class UsageLuaExecutor {
                     giftFires,
                     giftAllocations
             );
+            luaStatusOkCounter.increment();
         }
+        long parseElapsedNanos = System.nanoTime() - parseStart;
 
         long elapsedNanos = System.nanoTime() - start;
+        luaTotalTimer.record(elapsedNanos, TimeUnit.NANOSECONDS);
+        luaRedisExecuteTimer.record(redisExecuteElapsedNanos, TimeUnit.NANOSECONDS);
+        luaParseTimer.record(parseElapsedNanos, TimeUnit.NANOSECONDS);
         long count = executedCount.incrementAndGet();
         long totalNanos = totalExecuteNanos.addAndGet(elapsedNanos);
+        long totalRedisNanos = totalRedisExecuteNanos.addAndGet(redisExecuteElapsedNanos);
+        long totalParseNanosValue = totalParseNanos.addAndGet(parseElapsedNanos);
         if (count % PERF_LOG_EVERY == 0) {
             long avgMicros = (totalNanos / count) / 1000L;
-            log.info("Lua 처리 성능 지표입니다. executed={}, avgMicros={}", count, avgMicros);
+            long avgRedisMicros = (totalRedisNanos / count) / 1000L;
+            long avgParseMicros = (totalParseNanosValue / count) / 1000L;
+            log.info(
+                    "Lua 성능 지표: 처리건수={}, 평균처리={}µs, Redis실행평균={}µs, 파싱평균={}µs",
+                    count,
+                    avgMicros,
+                    avgRedisMicros,
+                    avgParseMicros
+            );
         }
         return result;
     }
 
-    // DUP 결과에 포함된 캐시 JSON을 UsageLuaResult로 복원한다.
     private UsageLuaResult parseCachedResult(String json) {
         try {
             JsonNode node = om.readTree(json);
@@ -172,7 +220,6 @@ public class UsageLuaExecutor {
         }
     }
 
-    // INVALID_BYTES 응답을 무시 결과 DTO로 변환한다.
     private UsageLuaResult ignoredResult() {
         return new UsageLuaResult(
                 true,
@@ -185,7 +232,6 @@ public class UsageLuaExecutor {
         );
     }
 
-    // Lua의 fired_gifts JSON 배열을 도메인 리스트로 파싱한다.
     private List<GiftFire> parseGiftFires(String json) {
         if (json == null || json.isBlank()) {
             return List.of();
@@ -210,7 +256,6 @@ public class UsageLuaExecutor {
         }
     }
 
-    // Lua의 gift_allocations JSON 배열을 도메인 리스트로 파싱한다.
     private List<GiftAllocation> parseGiftAllocations(String json) {
         if (json == null || json.isBlank()) {
             return List.of();
@@ -235,7 +280,6 @@ public class UsageLuaExecutor {
         }
     }
 
-    // Lua 반환값(Object/byte[])을 문자열로 정규화한다.
     private String toStr(Object o) {
         if (o == null) {
             return null;
@@ -246,7 +290,6 @@ public class UsageLuaExecutor {
         return o.toString();
     }
 
-    // Lua 반환값을 long 값으로 변환한다.
     private long toLong(Object o) {
         String s = toStr(o);
         if (s == null || s.isBlank()) {
