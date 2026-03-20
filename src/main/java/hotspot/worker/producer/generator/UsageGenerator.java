@@ -31,79 +31,80 @@ public class UsageGenerator {
 
     private static final int MIN_USAGE_KB = 50;
     private static final int MAX_USAGE_KB = 500;
+    private static final int FIXED_USAGE_KB = 500;
     private static final int EVENT_SIZE = 7000;
 
     public void produceEvent() {
-        List<UsageEvent> events = generateRandomEvents();
+        List<UsageEvent> events = generateFixedEvents();
         orchestrator.process(events);
     }
 
-//    private List<UsageEvent> generateFixedEvents() {
-//
-//        List<UsageEvent> events = new ArrayList<>();
-//
-//        for (long subId : FIXED_SUB_IDS) {
-//
-//            // Redis에서 familyId 조회
-//            Object familyObj =
-//                    redisTemplate.opsForHash()
-//                            .get(SUB_FAMILY_IDX_KEY, String.valueOf(subId));
-//
-//            if (familyObj == null) {
-//                continue;
-//            }
-//
-//            long familyId = Long.parseLong(familyObj.toString());
-//
-//            events.add(
-//                    UsageEvent.create(subId, familyId, FIXED_USAGE_KB)
-//            );
-//        }
-//
-//        return events;
-//    }
+    private List<UsageEvent> generateFixedEvents() {
 
-    private List<UsageEvent> generateRandomEvents() {
-        List<Object> sampledSubIds =
-                redisTemplate.opsForHash()
-                        .randomKeys(SUB_FAMILY_IDX_KEY, EVENT_SIZE);
+        List<UsageEvent> events = new ArrayList<>();
 
-        if (sampledSubIds == null || sampledSubIds.isEmpty()) {
-            throw new IllegalStateException("No family subs found");
-        }
+        for (long subId : FIXED_SUB_IDS) {
 
-        List<String> subIds = sampledSubIds.stream()
-                .map(Object::toString)
-                .toList();
-
-        List<Object> familyObjs =
-                redisTemplate.opsForHash()
-                        .multiGet(SUB_FAMILY_IDX_KEY, new ArrayList<>(subIds));
-
-        List<UsageEvent> events = new ArrayList<>(subIds.size());
-
-        for (int i = 0; i < subIds.size(); i++) {
-            String subIdStr = subIds.get(i);
-            Object familyObj = familyObjs.get(i);
+            // Redis에서 familyId 조회
+            Object familyObj =
+                    redisTemplate.opsForHash()
+                            .get(SUB_FAMILY_IDX_KEY, String.valueOf(subId));
 
             if (familyObj == null) {
                 continue;
             }
 
-            long subId = Long.parseLong(subIdStr);
             long familyId = Long.parseLong(familyObj.toString());
 
-            int bytes =
-                    ThreadLocalRandom.current()
-                            .nextInt(MIN_USAGE_KB, MAX_USAGE_KB + 1);
-
             events.add(
-                    UsageEvent.create(subId, familyId, bytes)
+                    UsageEvent.create(subId, familyId, FIXED_USAGE_KB)
             );
         }
 
         return events;
     }
+
+//    private List<UsageEvent> generateRandomEvents() {
+//        List<Object> sampledSubIds =
+//                redisTemplate.opsForHash()
+//                        .randomKeys(SUB_FAMILY_IDX_KEY, EVENT_SIZE);
+//
+//        if (sampledSubIds == null || sampledSubIds.isEmpty()) {
+//            throw new IllegalStateException("No family subs found");
+//        }
+//
+//        List<String> subIds = sampledSubIds.stream()
+//                .map(Object::toString)
+//                .toList();
+//
+//        List<Object> familyObjs =
+//                redisTemplate.opsForHash()
+//                        .multiGet(SUB_FAMILY_IDX_KEY, new ArrayList<>(subIds));
+//
+//        List<UsageEvent> events = new ArrayList<>(subIds.size());
+//
+//        for (int i = 0; i < subIds.size(); i++) {
+//            String subIdStr = subIds.get(i);
+//            Object familyObj = familyObjs.get(i);
+//
+//            if (familyObj == null) {
+//                continue;
+//            }
+//
+//            long subId = Long.parseLong(subIdStr);
+//            long familyId = Long.parseLong(familyObj.toString());
+//
+//            int bytes =
+//                    ThreadLocalRandom.current()
+//                            .nextInt(MIN_USAGE_KB, MAX_USAGE_KB + 1);
+//
+//            events.add(
+//                    UsageEvent.create(subId, familyId, bytes)
+//            );
+//        }
+//
+//        return events;
+//    }
 
 //    private List<UsageEvent> generateRandomEventsLegacy() {
 //
