@@ -17,7 +17,7 @@ public class UsageScheduler {
 
     // 1초마다 실행
     @Scheduled(
-            initialDelayString = "${app.usage.scheduler.initial-delay-ms:180000}",
+            initialDelayString = "${app.usage.scheduler.initial-delay-ms:90000}",
             fixedRateString = "${app.usage.scheduler.fixed-rate-ms:1000}"
     )
     public void generate() {

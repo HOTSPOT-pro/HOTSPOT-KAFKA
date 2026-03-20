@@ -37,6 +37,7 @@ import hotspot.worker.consumer.usage.support.TimeKey;
 public class SeedRunner {
 
     private static final int PIPELINE_BATCH_SIZE = 1000;
+    private static final String EXCLUDED_HISTORICAL_USAGE_APP_ID = "20";
     private static final List<Long> HISTORICAL_USAGE_SUB_IDS =
             List.of(1000001L, 1000002L, 1000003L, 1000004L, 1000005L, 1000006L);
     private static final DateTimeFormatter YYYYMM = DateTimeFormatter.ofPattern("yyyyMM");
@@ -563,9 +564,15 @@ public class SeedRunner {
                 WHERE is_deleted = false
                 ORDER BY app_blocked_service_id
                 """;
-        List<String> appIds = jdbc.query(sql, (rs, rowNum) -> rs.getString("app_blocked_service_id"));
+        List<String> appIds = jdbc.query(sql, (rs, rowNum) -> rs.getString("app_blocked_service_id"))
+                .stream()
+                .filter(appId -> !EXCLUDED_HISTORICAL_USAGE_APP_ID.equals(appId))
+                .toList();
         if (appIds.isEmpty()) {
-            throw new IllegalStateException("No app ids found in app_blocked_service");
+            throw new IllegalStateException(
+                    "No app ids found in app_blocked_service after excluding app_id="
+                            + EXCLUDED_HISTORICAL_USAGE_APP_ID
+            );
         }
         return appIds;
     }
