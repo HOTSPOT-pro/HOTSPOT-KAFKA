@@ -21,7 +21,6 @@ public class UsageGenerator {
 
     private static final long[] FIXED_SUB_IDS = {
             1000001L,
-            1000005L,
             1000006L
     };
 
