@@ -9,6 +9,11 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
 
+    env:
+      AWS_REGION: ap-northeast-2
+      KAFKA_INSTANCE_ID: i-06328308a47af333a
+      DOCKER_IMAGE: leegd120/kafka-be:dev  # 여기 네 이미지로 맞춰
+
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -39,26 +44,32 @@ jobs:
           echo "${{ secrets.DOCKERHUB_PASSWORD }}" | docker login \
             -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
 
-          docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/kafka-be:dev .
-          docker push ${{ secrets.DOCKERHUB_USERNAME }}/kafka-be:dev
+          docker build -t ${{ env.DOCKER_IMAGE }} .
+          docker push ${{ env.DOCKER_IMAGE }}
 
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v1.0.0
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            docker pull ${{ secrets.DOCKERHUB_USERNAME }}/kafka-be:dev
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
 
-            docker stop kafka-be || true
-            docker rm kafka-be || true
-
-            docker run -d \
-              --name kafka-be \
-              -p 8080:8080 \
-              --env-file /srv/hotspot/.env \
-              --restart always \
-              ${{ secrets.DOCKERHUB_USERNAME }}/kafka-be:dev
-            
-            docker image prune -f
+      - name: Deploy via SSM RunCommand
+        run: |
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "${{ env.KAFKA_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy kafka-be via SSM" \
+            --parameters "{\"commands\":[\"sudo /srv/hotspot/bin/deploy-kafka.sh ${{ env.DOCKER_IMAGE }}\"]}" \
+            --query "Command.CommandId" --output text)
+      
+          echo "SSM CommandId: $CMD_ID"
+      
+          aws ssm wait command-executed \
+            --command-id "$CMD_ID" \
+            --instance-id "${{ env.KAFKA_INSTANCE_ID }}"
+      
+          aws ssm get-command-invocation \
+            --command-id "$CMD_ID" \
+            --instance-id "${{ env.KAFKA_INSTANCE_ID }}" \
+            --query '{Status:Status,Stdout:StandardOutputContent,Stderr:StandardErrorContent}'
