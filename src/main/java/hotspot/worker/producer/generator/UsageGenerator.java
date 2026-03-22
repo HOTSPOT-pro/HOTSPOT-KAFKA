@@ -21,6 +21,10 @@ public class UsageGenerator {
 
     private static final long[] FIXED_SUB_IDS = {
             1000001L,
+            1000002L,
+            1000003L,
+            1000004L,
+            1000005L,
             1000006L
     };
 
@@ -29,7 +33,7 @@ public class UsageGenerator {
 
     private static final int MIN_USAGE_KB = 50;
     private static final int MAX_USAGE_KB = 500;
-    private static final int FIXED_USAGE_KB = 500;
+    private static final int FIXED_USAGE_KB = 1000;
     private static final int EVENT_SIZE = 7000;
 
     public void produceEvent() {
