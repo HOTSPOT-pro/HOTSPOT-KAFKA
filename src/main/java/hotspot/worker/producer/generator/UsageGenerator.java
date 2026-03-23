@@ -21,11 +21,8 @@ public class UsageGenerator {
 
     private static final long[] FIXED_SUB_IDS = {
             1000001L,
-            1000002L,
             1000003L,
-            1000004L,
-            1000005L,
-            1000006L
+            1000004L
     };
 
     private static final String SUB_FAMILY_IDX_KEY = "idx:sub:family";
